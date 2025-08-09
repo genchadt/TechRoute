@@ -1,7 +1,7 @@
 # src/ui.py
 
 """
-UI component for the PrintPing application.
+UI component for the TechRoute application.
 
 This module defines the AppUI class, which is responsible for building
 and managing all the Tkinter widgets for the main application window.
@@ -12,7 +12,7 @@ from tkinter import ttk
 from typing import Dict, Any, List, Optional
 
 class AppUI:
-    """Manages the user interface of the PrintPing application."""
+    """Manages the user interface of the TechRoute application."""
 
     def __init__(self, root: tk.Tk, app_controller, browser_name: str):
         """
@@ -39,9 +39,9 @@ class AppUI:
         file_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label="File", menu=file_menu, underline=0)
         file_menu.add_command(label="New", underline=0)
-        file_menu.add_command(label="Open", underline=0)
-        file_menu.add_command(label="Save", underline=0)
-        file_menu.add_command(label="Save As", underline=5)
+        file_menu.add_command(label="Open...", underline=0)
+        file_menu.add_command(label="Save List", underline=0)
+        file_menu.add_command(label="Save List As...", underline=5)
 
         # --- Edit Menu ---
         edit_menu = tk.Menu(self.menu_bar, tearoff=0)
@@ -70,6 +70,14 @@ class AppUI:
         help_menu.add_command(label="Github", underline=0)
         help_menu.add_command(label="About", underline=0)
 
+    def _on_frame_configure(self, event=None):
+        """Reset the scroll region to encompass the inner frame."""
+        self.status_canvas.configure(scrollregion=self.status_canvas.bbox("all"))
+
+    def _on_canvas_configure(self, event=None):
+        """Adjust the width of the inner frame to match the canvas."""
+        self.status_canvas.itemconfig(self.canvas_window, width=event.width)
+
     def _setup_ui(self, browser_name: str):
         """Creates and configures the UI elements."""
         self.status_bar_label = ttk.Label(self.root, text="Ready.", relief=tk.SUNKEN, anchor=tk.W, padding=2)
@@ -85,8 +93,29 @@ class AppUI:
         self.input_frame = ttk.LabelFrame(self.main_frame, text=f"Target Browser: {browser_name}", padding="10")
         self.input_frame.grid(row=0, column=0, sticky="ew")
         
-        self.status_frame = ttk.LabelFrame(self.main_frame, text="Status", padding="10")
-        self.status_frame.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        # --- Scrollable Status Frame ---
+        # Container for the canvas and scrollbar
+        status_container = ttk.LabelFrame(self.main_frame, text="Status", padding=(10, 5))
+        status_container.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        status_container.rowconfigure(0, weight=1)
+        status_container.columnconfigure(0, weight=1)
+
+        # Canvas to hold the scrollable content
+        self.status_canvas = tk.Canvas(status_container, borderwidth=0, highlightthickness=0)
+        self.status_scrollbar = ttk.Scrollbar(status_container, orient="vertical", command=self.status_canvas.yview)
+        self.status_canvas.configure(yscrollcommand=self.status_scrollbar.set)
+
+        # This frame will hold the actual status widgets
+        self.status_frame = ttk.Frame(self.status_canvas)
+        self.canvas_window = self.status_canvas.create_window((0, 0), window=self.status_frame, anchor="nw")
+
+        # Place canvas and scrollbar
+        self.status_canvas.grid(row=0, column=0, sticky="nsew")
+        self.status_scrollbar.grid(row=0, column=1, sticky="ns")
+
+        # Bind events for resizing
+        self.status_frame.bind("<Configure>", self._on_frame_configure)
+        self.status_canvas.bind("<Configure>", self._on_canvas_configure)
 
         ttk.Label(self.input_frame, text="Enter IPs, one per line (e.g., 192.168.1.50:80,443):").pack(pady=5)
 

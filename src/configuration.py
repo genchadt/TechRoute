@@ -1,7 +1,7 @@
 # src/configuration.py
 
 """
-Configuration loader for PrintPing.
+Configuration loader for TechRoute.
 
 Handles loading settings from config.yaml. If the file doesn't exist,
 it creates one with default values.
@@ -60,7 +60,7 @@ def load_or_create_config() -> Dict[str, Any]:
         try:
             with open(config_path, 'w') as f:
                 # Add comments to the top of the file for user guidance
-                f.write("# PrintPing Configuration File\n")
+                f.write("# TechRoute Configuration File\n")
                 f.write("# You can edit these settings. The application will use them on next launch.\n\n")
                 yaml.dump(DEFAULT_CONFIG, f, sort_keys=False, default_flow_style=False, indent=2)
             return DEFAULT_CONFIG

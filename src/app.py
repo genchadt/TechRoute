@@ -1,7 +1,7 @@
 # src/app.py
 
 """
-Main application class for the PrintPing GUI.
+Main application class for the TechRoute GUI.
 
 This module defines the main application window, manages UI state,
 and coordinates with the network module to run pinging operations.
@@ -17,7 +17,7 @@ from typing import Dict, Any, List, Optional
 from . import configuration, network
 from .ui import AppUI
 
-class PrinterPingerApp:
+class TechRouteApp:
     """Manages the UI, pinging threads, and browser launching."""
     ui: AppUI
     
@@ -27,7 +27,7 @@ class PrinterPingerApp:
         self.config = configuration.load_or_create_config()
         
         self.root = root
-        self.root.title("PrintPing - Printer Pinger & Web UI Launcher")
+        self.root.title("TechRoute - Machine Service Checker")
         self.root.geometry("450x420")
         self.root.minsize(450, 420)
 

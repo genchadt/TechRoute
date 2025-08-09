@@ -1,7 +1,7 @@
 # src/network.py
 
 """
-Network utilities for PrintPing.
+Network utilities for TechRoute.
 
 This module handles all network operations, including ICMP pings, TCP port checks,
 and system-specific browser detection and launching.

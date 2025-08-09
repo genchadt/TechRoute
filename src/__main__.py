@@ -1,7 +1,7 @@
 # src/__main__.py
 
 """
-Entry point for the PrintPing application.
+Entry point for the TechRoute application.
 
 This script initializes and runs the Tkinter main loop.
 It also displays the initial security warning.
@@ -9,7 +9,7 @@ It also displays the initial security warning.
 
 import tkinter as tk
 from tkinter import messagebox
-from .app import PrinterPingerApp
+from .app import TechRouteApp
 
 def main():
     """Main function to start the application."""
@@ -24,7 +24,7 @@ def main():
     
     try:
         root = tk.Tk()
-        app = PrinterPingerApp(root)
+        app = TechRouteApp(root)
         root.mainloop()
     except Exception as e:
         messagebox.showerror("Critical Error", f"A critical error occurred:\n{e}")
