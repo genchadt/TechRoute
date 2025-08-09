@@ -29,9 +29,13 @@ def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[
     """
     system = platform.system()
     for browser in browser_preferences:
-        exec_name = browser['exec'].get(system)
-        if not exec_name:
+        exec_names = browser['exec'].get(system)
+        if not exec_names:
             continue
+
+        # Ensure exec_names is a list for consistent processing
+        if isinstance(exec_names, str):
+            exec_names = [exec_names]
 
         path: Optional[str] = None
         is_mac_app = False
@@ -48,14 +52,25 @@ def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[
                     path = p
                     break
             if not path:
-                path = shutil.which(exec_name)
+                # Check PATH for any of the executable names
+                for name in exec_names:
+                    found_path = shutil.which(name)
+                    if found_path:
+                        path = found_path
+                        break
         elif system == 'Darwin':
-            mac_path = f"/Applications/{exec_name}.app"
-            if os.path.isdir(mac_path):
-                path = mac_path
-                is_mac_app = True
+            # On macOS, we expect a single app name in the list
+            if exec_names:
+                mac_path = f"/Applications/{exec_names[0]}.app"
+                if os.path.isdir(mac_path):
+                    path = mac_path
+                    is_mac_app = True
         else:  # Linux or other browsers on Windows
-            path = shutil.which(exec_name)
+            for name in exec_names:
+                found_path = shutil.which(name)
+                if found_path:
+                    path = found_path
+                    break
 
         if path:
             return {'name': browser['name'], 'path': path, 'args': browser['args'], 'is_mac_app': is_mac_app}
@@ -63,31 +78,33 @@ def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[
 
 def open_browser_with_url(url: str, browser_command: Optional[Dict[str, Any]]):
     """Opens a URL using the detected browser or falls back to the default."""
-    if browser_command:
-        try:
-            command: Any = []
-            use_shell = False
-            system = platform.system()
+    if not browser_command:
+        # If no preferred browser is found, do not open anything.
+        print("No preferred browser configured or found. Skipping auto-launch.")
+        return
 
-            if system == 'Darwin' and browser_command.get('is_mac_app'):
-                command.extend(['open', '-a', browser_command['path']])
-                if browser_command['args']:
-                    command.extend(['--args'] + browser_command['args'])
-                command.append(url)
-            else:  # Windows and Linux
-                command.append(browser_command['path'])
-                command.extend(browser_command['args'])
-                command.append(url)
-                if system == 'Windows':
-                    use_shell = True
+    try:
+        command: Any = []
+        use_shell = False
+        system = platform.system()
+
+        if system == 'Darwin' and browser_command.get('is_mac_app'):
+            command.extend(['open', '-a', browser_command['path']])
+            if browser_command['args']:
+                command.extend(['--args'] + browser_command['args'])
+            command.append(url)
+        else:  # Windows and Linux
+            command.append(browser_command['path'])
+            command.extend(browser_command['args'])
+            command.append(url)
+            if system == 'Windows':
+                use_shell = True
             
-            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=use_shell)
-        except (OSError, FileNotFoundError) as e:
-            print(f"Error launching preferred browser: {e}. Falling back to default.")
-            webbrowser.open(url)
-    else:
-        webbrowser.open(url)
-
+        subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=use_shell)
+    except (OSError, FileNotFoundError) as e:
+        print(f"Error launching preferred browser: {e}. The browser might not be installed correctly.")
+        # No fallback to webbrowser.open()
+    
 def _parse_latency(ping_output: str, is_windows: bool) -> str:
     """Parses latency from the ping command's stdout."""
     try:
@@ -95,8 +112,9 @@ def _parse_latency(ping_output: str, is_windows: bool) -> str:
             match = re.search(r"Average\s?=\s?(\d+)ms", ping_output)
             if match: return f"{match.group(1)}ms"
         else:  # Linux/macOS
-            match = re.search(r"rtt min/avg/max/mdev = [\d.]+/([\d.]+)/", ping_output)
-            if match: return f"{int(float(match.group(1)))}ms"
+            # Handle both "avg" and "durchschnitt" for English and German locales
+            match = re.search(r"rtt min/(avg|durchschnitt)/max/mdev = [\d.]+/([\d.]+)/", ping_output)
+            if match: return f"{int(float(match.group(2)))}ms"
     except (IndexError, ValueError):
         pass
     return ""
@@ -151,7 +169,7 @@ def ping_worker(
                 command, check=True, capture_output=True, text=True, startupinfo=startupinfo
             )
             
-            if response.returncode == 0:
+            if response.returncode == 0 or (not is_windows and response.returncode == 1 and "1 received" in response.stdout):
                 status, color = "Online", "green"
                 latency_str = _parse_latency(response.stdout, is_windows)
                 

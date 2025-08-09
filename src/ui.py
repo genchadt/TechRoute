@@ -156,3 +156,7 @@ class AppUI:
                 port_widgets = widgets.get("port_widgets", {})
                 for port, port_status in port_statuses.items():
                     pass
+        else:
+            # This can happen if the UI is cleared while a thread is about to send an update.
+            # It's safe to just ignore it.
+            print(f"Warning: Received status update for '{original_string}' but its UI widget no longer exists.")

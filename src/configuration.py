@@ -22,7 +22,9 @@ DEFAULT_CONFIG = {
         {
             'name': 'Google Chrome',
             'exec': {
-                'Windows': 'chrome', 'Linux': 'google-chrome', 'Darwin': 'Google Chrome'
+                'Windows': 'chrome', 
+                'Linux': ['google-chrome', 'chromium-browser', 'chromium'], 
+                'Darwin': 'Google Chrome'
             },
             'args': ['--ignore-certificate-errors', '--test-type']
         },
