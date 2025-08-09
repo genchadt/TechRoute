@@ -76,7 +76,7 @@ def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[
                     # Update browser name to what was actually found
                     browser['name'] = app_name
                     break
-        else:  # Linux
+        elif system == 'Linux':
             for name in exec_names:
                 found_path = shutil.which(name)
                 if found_path:
