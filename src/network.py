@@ -20,15 +20,20 @@ from typing import Dict, Any, List, Optional
 
 def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """
-    Finds the first available browser from the provided preference list.
+    Finds the first available Chrome/Chromium browser from the preference list.
 
-    On Windows, it specifically searches for Chrome in common installation directories.
+    On Windows, it specifically searches for Chrome/Chromium in common installation directories
+    to avoid accidentally picking up Chrome-based browsers like Edge.
     
     Returns:
         A dictionary with browser details if found, otherwise None.
     """
     system = platform.system()
     for browser in browser_preferences:
+        # We only care about Chrome/Chromium for this application's purpose
+        if 'chrome' not in browser['name'].lower() and 'chromium' not in browser['name'].lower():
+            continue
+
         exec_names = browser['exec'].get(system)
         if not exec_names:
             continue
@@ -40,7 +45,8 @@ def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[
         path: Optional[str] = None
         is_mac_app = False
 
-        if system == 'Windows' and browser['name'] == 'Google Chrome':
+        if system == 'Windows':
+            # Prioritize explicit paths to avoid finding Edge's chrome.exe stub
             possible_paths = [
                 os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Google\\Chrome\\Application\\chrome.exe"),
                 os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "Google\\Chrome\\Application\\chrome.exe"),
@@ -51,21 +57,26 @@ def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[
                 if os.path.exists(p):
                     path = p
                     break
+            
+            # If not found in explicit paths, check PATH, but be wary of stubs.
             if not path:
-                # Check PATH for any of the executable names
                 for name in exec_names:
                     found_path = shutil.which(name)
-                    if found_path:
+                    # A simple heuristic to avoid Edge's compatibility stub
+                    if found_path and ('google' in found_path.lower() or 'chromium' in found_path.lower()): 
                         path = found_path
                         break
         elif system == 'Darwin':
-            # On macOS, we expect a single app name in the list
-            if exec_names:
-                mac_path = f"/Applications/{exec_names[0]}.app"
+            # On macOS, check for both standard Chrome and Chromium app names
+            for app_name in ['Google Chrome', 'Chromium']:
+                mac_path = f"/Applications/{app_name}.app"
                 if os.path.isdir(mac_path):
                     path = mac_path
                     is_mac_app = True
-        else:  # Linux or other browsers on Windows
+                    # Update browser name to what was actually found
+                    browser['name'] = app_name
+                    break
+        else:  # Linux
             for name in exec_names:
                 found_path = shutil.which(name)
                 if found_path:
@@ -79,8 +90,12 @@ def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[
 def open_browser_with_url(url: str, browser_command: Optional[Dict[str, Any]]):
     """Opens a URL using the detected browser or falls back to the default."""
     if not browser_command:
-        # If no preferred browser is found, do not open anything.
-        print("No preferred browser configured or found. Skipping auto-launch.")
+        # If no preferred browser is found, fall back to the OS default.
+        print(f"No preferred browser found or configured. Falling back to OS default to open {url}")
+        try:
+            webbrowser.open(url)
+        except Exception as e:
+            print(f"Failed to open URL in default browser: {e}")
         return
 
     try:
@@ -103,7 +118,7 @@ def open_browser_with_url(url: str, browser_command: Optional[Dict[str, Any]]):
         subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=use_shell)
     except (OSError, FileNotFoundError) as e:
         print(f"Error launching preferred browser: {e}. The browser might not be installed correctly.")
-        # No fallback to webbrowser.open()
+        # No fallback to webbrowser.open() here, as the fallback is handled at the start.
     
 def _parse_latency(ping_output: str, is_windows: bool) -> str:
     """Parses latency from the ping command's stdout."""
