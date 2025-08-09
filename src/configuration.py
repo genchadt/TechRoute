@@ -28,20 +28,6 @@ DEFAULT_CONFIG = {
             },
             'args': ['--ignore-certificate-errors', '--test-type']
         },
-        {
-            'name': 'Microsoft Edge',
-            'exec': {
-                'Windows': 'msedge', 'Linux': 'microsoft-edge', 'Darwin': 'Microsoft Edge'
-            },
-            'args': ['--ignore-certificate-errors']
-        },
-        {
-            'name': 'Mozilla Firefox',
-            'exec': {
-                'Windows': 'firefox', 'Linux': 'firefox', 'Darwin': 'Firefox'
-            },
-            'args': []
-        }
     ]
 }
 

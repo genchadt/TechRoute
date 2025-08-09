@@ -78,11 +78,15 @@ class AppUI:
         self.main_frame = ttk.Frame(self.root, padding="10")
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
+        # --- Configure grid layout to ensure status_frame expands ---
+        self.main_frame.rowconfigure(1, weight=1)
+        self.main_frame.columnconfigure(0, weight=1)
+
         self.input_frame = ttk.LabelFrame(self.main_frame, text=f"Target Browser: {browser_name}", padding="10")
-        self.input_frame.pack(fill=tk.X)
+        self.input_frame.grid(row=0, column=0, sticky="ew")
         
         self.status_frame = ttk.LabelFrame(self.main_frame, text="Status", padding="10")
-        self.status_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        self.status_frame.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
 
         ttk.Label(self.input_frame, text="Enter IPs, one per line (e.g., 192.168.1.50:80,443):").pack(pady=5)
 
