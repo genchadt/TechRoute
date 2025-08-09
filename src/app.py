@@ -15,6 +15,7 @@ from tkinter import ttk, messagebox
 from typing import Dict, Any, List, Optional
 
 from . import configuration, network
+from .ui import AppUI
 
 class PrinterPingerApp:
     """Manages the UI, pinging threads, and browser launching."""
@@ -41,86 +42,7 @@ class PrinterPingerApp:
         browser_name = self.browser_command['name'] if self.browser_command else "OS Default"
         
         # --- UI Setup ---
-        self._setup_ui(browser_name)
-        self._setup_menu()
-
-    def _setup_menu(self):
-        """Creates the main application menu bar."""
-        self.menu_bar = tk.Menu(self.root)
-        self.root.config(menu=self.menu_bar)
-
-        # --- File Menu ---
-        file_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label="File", menu=file_menu, underline=0)
-        file_menu.add_command(label="New", underline=0)
-        file_menu.add_command(label="Open", underline=0)
-        file_menu.add_command(label="Save", underline=0)
-        file_menu.add_command(label="Save As", underline=5)
-
-        # --- Edit Menu ---
-        edit_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label="Edit", menu=edit_menu, underline=0)
-        edit_menu.add_command(label="Clear", underline=0)
-
-        # --- View Menu ---
-        view_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label="View", menu=view_menu, underline=0)
-        view_menu.add_command(label="Zoom In", underline=5)
-        view_menu.add_command(label="Zoom Out", underline=5)
-        view_menu.add_separator()
-        view_menu.add_checkbutton(label="Show Menubar", underline=5)
-        view_menu.add_checkbutton(label="Show Statusbar", underline=5)
-
-        # --- Settings Menu ---
-        settings_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label="Settings", menu=settings_menu, underline=0)
-        settings_menu.add_command(label="Preferences", underline=0)
-
-        # --- Help Menu ---
-        help_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label="Help", menu=help_menu, underline=0)
-        help_menu.add_command(label="Check for Updates", underline=6)
-        help_menu.add_separator()
-        help_menu.add_command(label="Github", underline=0)
-        help_menu.add_command(label="About", underline=0)
-
-    def _setup_ui(self, browser_name: str):
-        """Creates and configures the UI elements."""
-        self.status_bar_label = ttk.Label(self.root, text="Ready.", relief=tk.SUNKEN, anchor=tk.W, padding=2)
-        self.status_bar_label.pack(side=tk.BOTTOM, fill=tk.X)
-
-        self.main_frame = ttk.Frame(self.root, padding="10")
-        self.main_frame.pack(fill=tk.BOTH, expand=True)
-
-        self.input_frame = ttk.LabelFrame(self.main_frame, text=f"Target Browser: {browser_name}", padding="10")
-        self.input_frame.pack(fill=tk.X)
-        
-        self.status_frame = ttk.LabelFrame(self.main_frame, text="Status", padding="10")
-        self.status_frame.pack(fill=tk.BOTH, expand=True, pady=10)
-
-        ttk.Label(self.input_frame, text="Enter IPs, one per line (e.g., 192.168.1.50:80,443):").pack(pady=5)
-
-        text_frame = ttk.Frame(self.input_frame)
-        text_frame.pack(pady=5, fill=tk.X, expand=True)
-
-        self.ip_entry = tk.Text(text_frame, width=40, height=8)
-        self.ip_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.ip_entry.focus()
-
-        scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=self.ip_entry.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.ip_entry.config(yscrollcommand=scrollbar.set)
-        
-        self.start_stop_button = ttk.Button(self.input_frame, text="Start Pinging", command=self.toggle_ping_process, underline=0)
-        self.start_stop_button.pack(pady=10)
-
-        self.status_widgets: Dict[str, Dict[str, Any]] = {}
-
-        self.root.bind('<Control-Return>', lambda event: self.toggle_ping_process())
-        self.root.bind('<Alt-s>', lambda event: self.start_stop_button.invoke())
-
-    def _update_status_bar(self, message: str):
-        self.status_bar_label.config(text=message)
+        self.ui = AppUI(self.root, self, browser_name)
 
     def _parse_and_validate_targets(self, ip_string: str) -> List[Dict[str, Any]]:
         """
@@ -164,7 +86,7 @@ class PrinterPingerApp:
 
     def _start_ping_process(self):
         """Validates IPs and starts the pinging threads."""
-        ip_string = self.ip_entry.get("1.0", tk.END).strip()
+        ip_string = self.ui.ip_entry.get("1.0", tk.END).strip()
         if not ip_string:
             messagebox.showwarning("Input Required", "Please enter at least one IP address.")
             return
@@ -177,10 +99,10 @@ class PrinterPingerApp:
         self.browser_opened.clear()
         self.ping_threads.clear()
 
-        self.start_stop_button.config(text="Stop Pinging")
-        self.ip_entry.config(state=tk.DISABLED)
-        self._update_status_bar("Pinging targets...")
-        self._setup_status_display(targets)
+        self.ui.start_stop_button.config(text="Stop Pinging")
+        self.ui.ip_entry.config(state=tk.DISABLED)
+        self.ui.update_status_bar("Pinging targets...")
+        self.ui.setup_status_display(targets)
 
         for target in targets:
             thread = threading.Thread(
@@ -204,71 +126,16 @@ class PrinterPingerApp:
         """Stops the active pinging process."""
         self.is_pinging = False
         self.stop_event.set()
-        self.start_stop_button.config(text="Start Pinging")
-        self.ip_entry.config(state=tk.NORMAL)
-        self._update_status_bar("Pinging stopped.")
-
-    def _setup_status_display(self, targets: List[Dict[str, Any]]):
-        """Creates the initial status widgets for each IP address."""
-        for widget in self.status_frame.winfo_children():
-            widget.destroy()
-        self.status_widgets.clear()
-
-        for target in targets:
-            original_string, ports = target['original_string'], target['ports']
-            frame = ttk.Frame(self.status_frame)
-            frame.pack(fill=tk.X, pady=2, anchor='w')
-            
-            ping_frame = ttk.Frame(frame)
-            ping_frame.pack(side=tk.LEFT, anchor='n')
-
-            indicator = tk.Label(ping_frame, text="", width=5, bg="gray", fg="white", padx=4, pady=1, relief="raised", borderwidth=1)
-            indicator.pack(side=tk.LEFT, padx=(0, 10))
-
-            label = ttk.Label(ping_frame, text=f"{original_string}: Pinging...")
-            label.pack(side=tk.LEFT, pady=2)
-            
-            port_frame = ttk.Frame(frame)
-            port_frame.pack(side=tk.LEFT, padx=(10, 0), anchor='n')
-
-            port_widgets = {}
-            if ports:
-                for port in ports:
-                    port_button = tk.Label(port_frame, text=str(port), bg="gray", fg="white", padx=4, pady=1, relief="raised", borderwidth=1)
-                    port_button.pack(side=tk.LEFT, padx=2)
-                    port_widgets[port] = port_button
-            
-            self.status_widgets[original_string] = {"label": label, "indicator": indicator, "port_widgets": port_widgets}
+        self.ui.start_stop_button.config(text="Start Pinging")
+        self.ui.ip_entry.config(state=tk.NORMAL)
+        self.ui.update_status_bar("Pinging stopped.")
 
     def process_queue(self):
         """Processes messages from the update queue to safely update the GUI."""
         try:
             while not self.update_queue.empty():
                 args = self.update_queue.get_nowait()
-                self._update_status_in_gui(*args)
+                self.ui.update_status_in_gui(*args)
         finally:
             if self.is_pinging:
                 self.root.after(100, self.process_queue)
-
-    def _update_status_in_gui(self, original_string: str, status: str, color: str, launched_browser: bool, port_statuses: Optional[Dict[int, str]], latency_str: str):
-        """Updates the GUI widgets for a specific IP. Must be called from the main thread."""
-        if original_string in self.status_widgets:
-            widgets = self.status_widgets[original_string]
-            ip_part = original_string.split(':', 1)[0]
-
-            widgets["indicator"].config(bg=color, text=latency_str if status == "Online" else "FAIL")
-
-            current_text = widgets["label"].cget("text")
-            new_text = f"{ip_part}: {status}"
-
-            if launched_browser or "Launched" in current_text:
-                new_text += " - Web UI Launched"
-            widgets["label"].config(text=new_text)
-            
-            if port_statuses:
-                port_widgets = widgets.get("port_widgets", {})
-                for port, port_status in port_statuses.items():
-                    if port in port_widgets:
-                        button = port_widgets[port]
-                        port_color = {"Open": "#007bff", "Closed": "#fd7e14"}.get(port_status, "#dc3545")
-                        button.config(bg=port_color)
