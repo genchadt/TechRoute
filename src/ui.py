@@ -119,25 +119,31 @@ class AppUI:
 
         for target in targets:
             original_string, ports = target['original_string'], target['ports']
-            frame = ttk.Frame(self.status_frame)
-            frame.pack(fill=tk.X, pady=2, anchor='w')
             
-            ping_frame = ttk.Frame(frame)
-            ping_frame.pack(side=tk.LEFT, anchor='n')
+            # Use a Frame for each entry row
+            row_frame = ttk.Frame(self.status_frame)
+            row_frame.pack(fill=tk.X, expand=True, pady=2)
+            row_frame.columnconfigure(1, weight=1) # Allow the label/port frame to expand
 
-            indicator = tk.Label(ping_frame, text="", width=5, bg="gray", fg="white", padx=4, pady=1, relief="raised", borderwidth=1)
-            indicator.pack(side=tk.LEFT, padx=(0, 10))
+            indicator = tk.Label(row_frame, text="", width=5, bg="gray", fg="white", padx=4, pady=1, relief="raised", borderwidth=1)
+            indicator.grid(row=0, column=0, padx=(0, 10), sticky='n')
 
-            label = ttk.Label(ping_frame, text=f"{original_string}: Pinging...")
-            label.pack(side=tk.LEFT, pady=2)
+            # Frame to hold the main label and the port statuses
+            details_frame = ttk.Frame(row_frame)
+            details_frame.grid(row=0, column=1, sticky='ew')
+
+            label = ttk.Label(details_frame, text=f"{original_string}: Pinging...")
+            label.pack(side=tk.LEFT, pady=2, anchor='w')
             
-            port_frame = ttk.Frame(frame)
-            port_frame.pack(side=tk.LEFT, padx=(10, 0), anchor='n')
+            port_frame = ttk.Frame(details_frame)
+            port_frame.pack(side=tk.LEFT, padx=(10, 0), anchor='w', fill=tk.X, expand=True)
 
             port_widgets = {}
             if ports:
                 for port in ports:
-                    pass
+                    port_label = ttk.Label(port_frame, text=f"{port}: ???", font=("Segoe UI", 7))
+                    port_label.pack(side=tk.LEFT, padx=2)
+                    port_widgets[port] = port_label
             
             self.status_widgets[original_string] = {"label": label, "indicator": indicator, "port_widgets": port_widgets}
 
@@ -159,7 +165,10 @@ class AppUI:
             if port_statuses:
                 port_widgets = widgets.get("port_widgets", {})
                 for port, port_status in port_statuses.items():
-                    pass
+                    if port in port_widgets:
+                        port_widget = port_widgets[port]
+                        status_color = "green" if port_status == "Open" else "red"
+                        port_widget.config(text=f"{port}:{port_status}", foreground=status_color)
         else:
             # This can happen if the UI is cleared while a thread is about to send an update.
             # It's safe to just ignore it.

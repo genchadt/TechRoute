@@ -19,6 +19,7 @@ from .ui import AppUI
 
 class PrinterPingerApp:
     """Manages the UI, pinging threads, and browser launching."""
+    ui: AppUI
     
     def __init__(self, root: tk.Tk):
         """Initializes the application."""
