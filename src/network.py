@@ -77,11 +77,24 @@ def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[
                     browser['name'] = app_name
                     break
         elif system == 'Linux':
+            # First, try to find the browser in the system's PATH
             for name in exec_names:
                 found_path = shutil.which(name)
                 if found_path:
                     path = found_path
                     break
+            
+            # If not found, check some common hardcoded paths as a fallback
+            if not path:
+                possible_paths = [
+                    '/usr/bin/google-chrome',
+                    '/usr/bin/chromium-browser',
+                    '/usr/bin/chromium'
+                ]
+                for p in possible_paths:
+                    if os.path.exists(p):
+                        path = p
+                        break
 
         if path:
             return {'name': browser['name'], 'path': path, 'args': browser['args'], 'is_mac_app': is_mac_app}
