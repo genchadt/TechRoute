@@ -8,6 +8,7 @@ and coordinates with the network module to run pinging operations.
 """
 
 import ipaddress
+import platform
 import queue
 import threading
 import tkinter as tk
@@ -28,8 +29,15 @@ class TechRouteApp:
         
         self.root = root
         self.root.title("TechRoute - Machine Service Checker")
-        self.root.geometry("450x420")
-        self.root.minsize(450, 420)
+
+        # --- Platform-specific UI adjustments ---
+        width, height = 450, 420
+        if platform.system() == "Linux":
+            width = int(width * 1.3)
+            height = int(height * 1.3)
+
+        self.root.geometry(f"{width}x{height}")
+        self.root.minsize(width, height)
 
         # --- State Variables ---
         self.is_pinging = False
