@@ -141,7 +141,17 @@ class AppUI:
             port_widgets = {}
             if ports:
                 for port in ports:
-                    port_label = ttk.Label(port_frame, text=f"{port}: ???", font=("Segoe UI", 7))
+                    port_label = tk.Label(
+                        port_frame,
+                        text=f"{port}",
+                        font=("Segoe UI", 7, "bold"),
+                        bg="gray",
+                        fg="white",
+                        padx=3,
+                        pady=1,
+                        relief="raised",
+                        borderwidth=1
+                    )
                     port_label.pack(side=tk.LEFT, padx=2)
                     port_widgets[port] = port_label
             
@@ -167,8 +177,9 @@ class AppUI:
                 for port, port_status in port_statuses.items():
                     if port in port_widgets:
                         port_widget = port_widgets[port]
-                        status_color = "green" if port_status == "Open" else "red"
-                        port_widget.config(text=f"{port}:{port_status}", foreground=status_color)
+                        port_color = "#0078D4" if port_status == "Open" else "#F7630C"  # Win10 Blue/Orange
+                        port_widget.config(bg=port_color)
+                    
         else:
             # This can happen if the UI is cleared while a thread is about to send an update.
             # It's safe to just ignore it.
