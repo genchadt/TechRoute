@@ -206,14 +206,96 @@ class BuilderMixin:
         setattr(self, job_attr, self.root.after_idle(_do))
 
     def _update_status_canvas_height(self: UIContext) -> None:
+        """
+        Grow the window to accommodate status entries up to six rows tall.
+        After six, fix the canvas height to show exactly six rows and enable the scrollbar.
+        """
         try:
             self.root.update_idletasks()
-            req_h = max(1, self.status_frame.winfo_reqheight())
-            scrollbar_visible = bool(self.status_scrollbar.winfo_ismapped())
-            if not scrollbar_visible:
-                self.status_canvas.configure(height=req_h)
+
+            # Local helper to compute height needed to show six rows without scrolling
+            def compute_six_row_target_height(row_h: int | None = None) -> int:
+                try:
+                    cached = getattr(self, "_status_row_reqheight", None)
+                    if row_h is None:
+                        row_h_local = cached
+                    else:
+                        row_h_local = row_h
+                    if not row_h_local:
+                        # Build a temporary sample row to measure
+                        temp = ttk.Frame(self.status_frame)
+                        btn = tk.Button(temp, text="", width=5, bg="gray", fg="white", relief="raised", borderwidth=1, state=tk.DISABLED)
+                        btn.grid(row=0, column=0, padx=(0, 10), sticky="w")
+                        lbl = ttk.Label(temp, text="example: Pinging...")
+                        lbl.grid(row=0, column=1, sticky="w")
+                        pframe = ttk.Frame(temp)
+                        pframe.grid(row=0, column=2, sticky="e")
+                        pbtn = tk.Button(pframe, text="80", bg="gray", fg="white", relief="raised", borderwidth=1, state=tk.DISABLED, padx=4, pady=1)
+                        pbtn.pack(side=tk.LEFT, padx=2)
+                        temp.pack_forget()
+                        self.root.update_idletasks()
+                        row_h_local = max(1, temp.winfo_reqheight())
+                        temp.destroy()
+                        setattr(self, "_status_row_reqheight", row_h_local)
+                    inter_row_pad_local = 4
+                    frame_pad_local = 20
+                    return 6 * row_h_local + 5 * inter_row_pad_local + frame_pad_local
+                except Exception:
+                    return 6 * 28 + 5 * 4 + 20
+
+            # Determine number of status rows and approximate row height.
+            children = [c for c in self.status_frame.winfo_children() if isinstance(c, ttk.Frame) or isinstance(c, tk.Frame)]
+            # If placeholder label is present (no targets), hide scrollbar and fit to content.
+            if not children:
+                total_req = max(1, self.status_frame.winfo_reqheight())
+                six_rows_h = compute_six_row_target_height()
+                target_h = max(total_req, six_rows_h)
+                self.hide_scrollbar()
+                self.status_canvas.configure(height=target_h)
+                # Grow window to fit the six-rows target height (or placeholder, whichever is larger)
+                try:
+                    self.shrink_to_fit()
+                except Exception:
+                    pass
+                return
+
+            num_rows = len(children)
+
+            # Measure a single row height; fall back to average from requisition
+            sample = children[0]
+            row_h = max(1, sample.winfo_reqheight())
+            setattr(self, "_status_row_reqheight", row_h)
+
+            # Allow some vertical padding between rows and frame padding
+            inter_row_pad = 4  # matches pady=2 per row
+            frame_pad = 20     # LabelFrame padding="10" top+bottom
+
+            visible_rows = min(6, num_rows)
+            desired_height = visible_rows * row_h + (visible_rows - 1) * (inter_row_pad) + frame_pad
+
+            # Total content height
+            content_height = max(1, self.status_frame.winfo_reqheight())
+
+            if num_rows > 6:
+                # Fix canvas height to show exactly six rows and enable scrollbar
+                self.status_canvas.configure(height=desired_height)
+                self.show_scrollbar()
+            else:
+                # Fit to content and hide scrollbar
+                self.hide_scrollbar()
+                six_rows_h = compute_six_row_target_height(row_h=row_h)
+                self.status_canvas.configure(height=max(content_height, six_rows_h))
+                # Grow the main window to requested size so up to six rows are visible without scrolling
+                try:
+                    self.shrink_to_fit()
+                except Exception:
+                    pass
+
+            # Update scrollregion regardless so scrollbar range is correct when shown
+            self.status_canvas.configure(scrollregion=self.status_canvas.bbox("all"))
         except Exception:
             pass
+
 
     def lock_min_size_to_current(self: UIContext) -> None:
         try:

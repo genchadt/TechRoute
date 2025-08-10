@@ -37,11 +37,7 @@ class StatusViewMixin:
                 pass
             return
 
-        # Show scrollbar only if there are more than a few items.
-        if len(targets) > 8:
-            self.show_scrollbar()
-        else:
-            self.hide_scrollbar()
+    # Defer scrollbar visibility to dynamic sizing logic in the builder.
         for target in targets:
             original_string, ports = target['original_string'], target['ports']
 
