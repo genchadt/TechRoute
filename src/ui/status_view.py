@@ -30,10 +30,9 @@ class StatusViewMixin:
             placeholder = ttk.Label(self.status_frame, text="Waiting for targets...", foreground="gray")
             placeholder.pack(pady=10, padx=10)
             self.hide_scrollbar()
-            # Update canvas height and shrink window after content changes
+            # Update canvas height after content changes (avoid resizing the window here)
             try:
                 cast(Any, self)._schedule_status_canvas_height_update()
-                cast(Any, self).shrink_to_fit()
             except Exception:
                 pass
             return
@@ -106,10 +105,9 @@ class StatusViewMixin:
                 "port_widgets": port_widgets,
             }
 
-        # After building the list, update canvas height and shrink window to current content
+        # After building the list, update canvas height (avoid resizing the window here)
         try:
             cast(Any, self)._schedule_status_canvas_height_update()
-            cast(Any, self).shrink_to_fit()
         except Exception:
             pass
 

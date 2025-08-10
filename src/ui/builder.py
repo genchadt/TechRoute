@@ -68,9 +68,10 @@ class BuilderMixin:
         )
         self.status_indicator.pack(side=tk.RIGHT)
 
+        # --- Main Frame ---
         self.main_frame = ttk.Frame(self.root, padding="10")
-        # Do not force the main frame to expand vertically; let content dictate size
-        self.main_frame.pack(fill=tk.X, expand=False)
+        # Allow horizontal growth with the window; keep vertical sizing content-driven
+        self.main_frame.pack(fill=tk.X, expand=True)
 
         # --- Configure grid layout ---
         # Avoid forcing vertical expansion; shrink to fit contents
@@ -129,7 +130,6 @@ class BuilderMixin:
         self.status_container = ttk.Frame(self.main_frame)
         self.status_container.grid(row=3, column=0, sticky="nsew", pady=(10, 0))
         # Don't give extra weight; let the canvas height follow content
-
         self.status_canvas = tk.Canvas(self.status_container, borderwidth=0, highlightthickness=0)
         self.status_scrollbar = ttk.Scrollbar(self.status_container, orient="vertical", command=self.status_canvas.yview)
 
@@ -137,8 +137,8 @@ class BuilderMixin:
         self.status_frame = ttk.LabelFrame(self.status_canvas, text="Status", padding="10")
 
         self.status_frame_window = self.status_canvas.create_window((0, 0), window=self.status_frame, anchor="nw")
-        # Fill horizontally so borders align; don't force vertical expansion
-        self.status_canvas.pack(side=tk.LEFT, fill=tk.X, expand=False)
+        # Fill horizontally and expand so the Status group box tracks window width on resize
+        self.status_canvas.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         # Initially hide the scrollbar
         self.hide_scrollbar()
@@ -205,11 +205,16 @@ class BuilderMixin:
             command=self.app_controller.clear_statuses,
         )
         clear_statuses_button.pack(side=tk.RIGHT)
+        # Expose on self for other mixins/tests if needed
+        try:
+            self.clear_statuses_button = clear_statuses_button
+        except Exception:
+            pass
 
         # Key bindings
         self.root.bind("<Control-Return>", lambda event: self.app_controller.toggle_ping_process())
         self.root.bind("<Alt-s>", lambda event: self.start_stop_button.invoke())
-        # Ensure initial geometry wraps content tightly
+        # Ensure initial geometry wraps content tightly (height only; width tied by canvas <-> frame binding)
         try:
             self._schedule_status_canvas_height_update()
         except Exception:
