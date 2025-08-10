@@ -71,8 +71,7 @@ class TechRouteApp:
         try:
             # Delegate to UI helper to size to requested width/height
             self.ui.shrink_to_fit()
-            # Lock current size as the minimum so the window can't be shrunk too far
-            self.ui.lock_min_size_to_current()
+            # Minimum size is locked after network info is fetched to ensure it's accurate.
         except Exception:
             pass
 
@@ -85,6 +84,13 @@ class TechRouteApp:
         def _apply():
             self.network_info = info or {}
             self.ui.update_network_info(self.network_info)
+
+            # After populating network info, set the final minimum window size.
+            # This ensures the window is large enough for all content.
+            self.root.update_idletasks()
+            req_w = self.root.winfo_reqwidth()
+            req_h = self.root.winfo_reqheight()
+            self.root.minsize(req_w, req_h)
         try:
             self.root.after(0, _apply)
         except tk.TclError:

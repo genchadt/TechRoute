@@ -80,8 +80,9 @@ class BuilderMixin:
 
         # Main Frame
         self.main_frame = ttk.Frame(self.root, padding="10")
-        self.main_frame.pack(fill=tk.X, expand=True)
+        self.main_frame.pack(fill=tk.BOTH, expand=True)
         self.main_frame.columnconfigure(0, weight=1)
+        self.main_frame.rowconfigure(3, weight=1)
 
         # Top Controls Frame
         self.controls_frame = ttk.Frame(self.main_frame, padding=(0, 0, 0, 10))
@@ -131,7 +132,7 @@ class BuilderMixin:
 
         text_frame = ttk.Frame(self.input_frame)
         text_frame.pack(pady=5, fill=tk.X, expand=True)
-        self.ip_entry = tk.Text(text_frame, width=40, height=6)
+        self.ip_entry = tk.Text(text_frame, width=60, height=6)
         self.ip_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.ip_entry.focus()
         scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=self.ip_entry.yview)
@@ -145,7 +146,7 @@ class BuilderMixin:
         self.status_scrollbar = ttk.Scrollbar(self.status_container, orient="vertical", command=self.status_canvas.yview)
         self.status_frame = ttk.LabelFrame(self.status_canvas, text="Status", padding="10")
         self.status_frame_window = self.status_canvas.create_window((0, 0), window=self.status_frame, anchor="nw")
-        self.status_canvas.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.status_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.hide_scrollbar()
         self.status_frame.bind("<Configure>", self._on_status_frame_configure)
         self.status_canvas.bind("<Configure>", self._on_canvas_configure)

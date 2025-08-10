@@ -30,6 +30,10 @@ class AppUI(MenuMixin, DialogsMixin, AnimationsMixin, BuilderMixin, StatusViewMi
         self.status_widgets: Dict[str, Dict[str, Any]] = {}
         self.blinking_animation_job: Optional[str] = None
         self.ping_animation_job: Optional[str] = None
+        # For UIContext protocol compliance
+        self._resizing_active: bool = False
+        self._resize_debounce_job: Optional[str] = None
+        self._last_canvas_width: Optional[int] = None
         # Optional button created in builder; may not be set in all contexts
         self.clear_statuses_button = None
 
