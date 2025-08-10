@@ -163,9 +163,7 @@ def _check_port(ip: str, port: int, timeout: float) -> str:
 def ping_worker(
     target: Dict[str, Any], 
     stop_event: threading.Event, 
-    update_queue: queue.Queue, 
-    browser_opened: set, 
-    browser_command: Optional[Dict[str, Any]],
+    update_queue: queue.Queue,
     app_config: Dict[str, Any]
 ):
     """
@@ -182,39 +180,29 @@ def ping_worker(
     command = ['ping', '-n' if is_windows else '-c', '1', '-w' if is_windows else '-W', '1000' if is_windows else '1', ip]
 
     while not stop_event.is_set():
-        launched_browser = False
         port_statuses: Optional[Dict[int, str]] = None
         latency_str = ""
+        web_port_open = False
         
         try:
-            startupinfo = None
-            if is_windows:
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
+            # --- ICMP Ping ---
+            ping_output = subprocess.check_output(command, stderr=subprocess.STDOUT, text=True, creationflags=subprocess.CREATE_NO_WINDOW if is_windows else 0)
+            status = "Online"
+            color = "green"
+            latency_str = _parse_latency(ping_output, is_windows)
 
-            response = subprocess.run(
-                command, check=True, capture_output=True, text=True, startupinfo=startupinfo
-            )
+            # --- TCP Port Check ---
+            if ports:
+                port_statuses = {}
+                for port in ports:
+                    port_status = _check_port(ip, port, port_timeout)
+                    port_statuses[port] = port_status
+                    if port_status == 'Open' and port in [80, 443, 8080]:
+                        web_port_open = True
             
-            if response.returncode == 0 or (not is_windows and response.returncode == 1 and "1 received" in response.stdout):
-                status, color = "Online", "green"
-                latency_str = _parse_latency(response.stdout, is_windows)
-                
-                if ports:
-                    port_statuses = {port: _check_port(ip, port, port_timeout) for port in ports}
-                    if not any(s == "Open" for s in port_statuses.values()):
-                        color = "orange"
-                
-                if ip not in browser_opened:
-                    open_browser_with_url(f"https://{ip}", browser_command)
-                    browser_opened.add(ip)
-                    launched_browser = True
-            else:
-                status, color = "Offline", "red"
-
         except (subprocess.CalledProcessError, FileNotFoundError):
-            status, color = "Offline", "red"
+            status = "Offline"
+            color = "red"
         
-        update_queue.put((original_string, status, color, launched_browser, port_statuses, latency_str))
+        update_queue.put((original_string, status, color, port_statuses, latency_str, web_port_open))
         stop_event.wait(timeout=ping_interval)

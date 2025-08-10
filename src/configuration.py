@@ -35,6 +35,19 @@ def get_config_path() -> str:
     """Returns the path to the config file."""
     return "config.yaml"
 
+def save_config(config: Dict[str, Any]):
+    """Saves the provided configuration dictionary to config.yaml."""
+    config_path = get_config_path()
+    try:
+        with open(config_path, 'w') as f:
+            f.write("# TechRoute Configuration File\n")
+            f.write("# You can edit these settings. The application will use them on next launch.\n\n")
+            yaml.dump(config, f, sort_keys=False, default_flow_style=False, indent=2)
+    except IOError as e:
+        # In a GUI app, it's better to show an error dialog than print to stderr
+        # For now, we'll print, but this could be improved.
+        print(f"ERROR: Could not write config file to '{config_path}': {e}", file=sys.stderr)
+
 def load_or_create_config() -> Dict[str, Any]:
     """
     Loads configuration from config.yaml.
@@ -52,7 +65,8 @@ def load_or_create_config() -> Dict[str, Any]:
         if user_config:
             # Deep update for nested structures like browser_preferences if needed,
             # but a simple update is fine for this structure.
-            config.update(user_config)
+            if isinstance(user_config, dict):
+                config.update(user_config)
         return config
 
     except FileNotFoundError:
