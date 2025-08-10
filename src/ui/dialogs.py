@@ -25,7 +25,7 @@ class DialogsMixin:
         # Default size
         width, height = 300, 250
         if platform.system() == "Linux":
-            width = int(width * 1.15)
+            width = int(width * 1.25)
             height = int(height * 1.15)
         dialog.geometry(f"{width}x{height}")
         dialog.transient(self.root)
