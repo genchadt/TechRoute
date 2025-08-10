@@ -16,8 +16,10 @@ import socket
 import subprocess
 import threading
 import webbrowser
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, cast
 import sys
+import time
+import random
 
 def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """
@@ -339,31 +341,135 @@ def _parse_latency(ping_output: str, is_windows: bool) -> str:
             match = re.search(r"Average\s?=\s?(\d+)ms", ping_output)
             if match: return f"{match.group(1)}ms"
         else:  # Linux/macOS
-            # Handle both "avg" and "durchschnitt" for English and German locales
-            match = re.search(r"rtt min/(avg|durchschnitt)/max/mdev = [\d.]+/([\d.]+)/", ping_output)
-            if match: return f"{int(float(match.group(2)))}ms"
+            # Handle common Unix ping summaries
+            # Linux:  rtt min/avg/max/mdev = 10.123/12.345/...
+            m = re.search(r"rtt min/(avg|durchschnitt)/max/(mdev|stddev) = [\d.]+/([\d.]+)/", ping_output)
+            if m:
+                return f"{int(float(m.group(3)))}ms"
+            # macOS: round-trip min/avg/max/stddev = 10.123/12.345/...
+            m = re.search(r"round-trip min/(avg|durchschnitt)/max/(mdev|stddev) = [\d.]+/([\d.]+)/", ping_output)
+            if m:
+                return f"{int(float(m.group(2)))}ms"
     except (IndexError, ValueError):
         pass
     return ""
 
+_DNS_CACHE: Dict[str, Tuple[float, List[Tuple[int, str, int, int]]]] = {}
+_DNS_TTL_SECONDS = 300  # cache DNS results for 5 minutes
+
+def _is_ip_literal(host: str) -> Tuple[bool, Optional[int]]:
+    try:
+        ip_obj = socket.inet_pton(socket.AF_INET, host)
+        return True, socket.AF_INET
+    except OSError:
+        pass
+    try:
+        ip_obj = socket.inet_pton(socket.AF_INET6, host.split('%')[0])  # strip scope if present
+        return True, socket.AF_INET6
+    except OSError:
+        return False, None
+
+def _cached_resolve_host(host: str) -> List[Tuple[int, str, int, int]]:
+    """Resolve hostname to a list of addresses with basic TTL cache.
+
+    Returns list of tuples: (family, ip, flowinfo, scopeid)
+    For IPv4, flowinfo and scopeid are 0.
+    If host is already an IP literal, returns a single-entry list immediately.
+    """
+    is_ip, family = _is_ip_literal(host)
+    if is_ip:
+        if family == socket.AF_INET:
+            return [(socket.AF_INET, host, 0, 0)]
+        else:
+            # Extract optional scope id like fe80::1%eth0
+            ip_only, _, scope = host.partition('%')
+            scopeid = 0
+            try:
+                # Best-effort: convert interface name to index if provided
+                if scope:
+                    scopeid = socket.if_nametoindex(scope)
+            except OSError:
+                # Not an interface name or not available
+                scopeid = 0
+            return [(socket.AF_INET6, ip_only, 0, scopeid)]
+
+    now = time.time()
+    cached = _DNS_CACHE.get(host)
+    if cached and now - cached[0] < _DNS_TTL_SECONDS:
+        return cached[1]
+
+    results: List[Tuple[int, str, int, int]] = []
+    try:
+        # Resolve without port to avoid duplicating per-port lookups
+        infos = socket.getaddrinfo(host, None)
+        for family, socktype, proto, canonname, sockaddr in infos:
+            if family == socket.AF_INET:
+                if isinstance(sockaddr, tuple) and len(sockaddr) >= 2 and isinstance(sockaddr[0], (str, bytes)):
+                    ip = cast(str, sockaddr[0] if isinstance(sockaddr[0], str) else sockaddr[0].decode('ascii', 'ignore'))
+                    results.append((family, ip, 0, 0))
+            elif family == socket.AF_INET6:
+                if isinstance(sockaddr, tuple):
+                    if len(sockaddr) == 4:
+                        ip6 = cast(str, sockaddr[0])
+                        flowinfo = cast(int, sockaddr[2])
+                        scopeid = cast(int, sockaddr[3])
+                        results.append((family, ip6, flowinfo, scopeid))
+                    elif len(sockaddr) >= 2:
+                        ip6 = cast(str, sockaddr[0])
+                        results.append((family, ip6, 0, 0))
+    except socket.gaierror:
+        results = []
+
+    # De-duplicate while preserving order
+    seen = set()
+    deduped: List[Tuple[int, str, int, int]] = []
+    for rec in results:
+        key = (rec[0], rec[1], rec[3])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(rec)
+
+    _DNS_CACHE[host] = (now, deduped)
+    return deduped
+
+def _select_ping_target(host: str) -> Tuple[str, bool]:
+    """Choose a concrete IP address to ping and whether to use IPv6 option.
+
+    Preference: if any IPv6 addresses exist, prefer IPv6 (keeping prior behavior);
+    otherwise use IPv4. Returns (ip_string, use_ipv6).
+    """
+    addrs = _cached_resolve_host(host)
+    v6 = [a for a in addrs if a[0] == socket.AF_INET6]
+    v4 = [a for a in addrs if a[0] == socket.AF_INET]
+    if v6:
+        ip, flow, scope = v6[0][1], v6[0][2], v6[0][3]
+        # Re-attach scope if applicable
+        ip_with_scope = f"{ip}%{scope}" if scope else ip
+        return ip_with_scope, True
+    if v4:
+        return v4[0][1], False
+    # Fallback to original host; let ping decide
+    return host, False
+
 def _check_port(host: str, port: int, timeout: float) -> str:
     """Checks if a TCP port is open on a given host (IPv4/IPv6/hostname)."""
-    try:
-        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    except socket.gaierror:
+    addrs = _cached_resolve_host(host)
+    if not addrs:
         return "Hostname Error"
 
-    for family, socktype, proto, canonname, sockaddr in infos:
+    for family, ip, flowinfo, scopeid in addrs:
         try:
-            with socket.socket(family, socktype, proto) as sock:
+            with socket.socket(family, socket.SOCK_STREAM, 0) as sock:
                 sock.settimeout(timeout)
+                if family == socket.AF_INET:
+                    sockaddr = (ip, port)
+                else:
+                    sockaddr = (ip, port, flowinfo, scopeid)
                 if sock.connect_ex(sockaddr) == 0:
                     return "Open"
         except socket.timeout:
-            # Try next addrinfo
             continue
         except OSError:
-            # Try next addrinfo
             continue
     return "Closed"
 
@@ -384,23 +490,25 @@ def ping_worker(
     port_timeout = app_config['port_check_timeout_seconds']
     
     is_windows = platform.system().lower() == 'windows'
-    # Build ping command; prefer IPv6-specific flag for IPv6 literals
-    use_ipv6 = False
-    try:
-        use_ipv6 = socket.getaddrinfo(ip, None, family=socket.AF_INET6)
-        use_ipv6 = bool(use_ipv6)
-    except socket.gaierror:
-        use_ipv6 = False
+    # Resolve a concrete target to avoid repeated DNS inside ping and prefer IPv6 when available
+    concrete_ip, use_ipv6 = _select_ping_target(ip)
 
+    # Build ping command; pass numeric/quiet flags to avoid reverse DNS and reduce output noise
     command: List[str] = ['ping']
     if is_windows:
         if use_ipv6:
             command.append('-6')
-        command.extend(['-n', '1', '-w', '1000', ip])
+        # -n 1 (count), -w 1000 (timeout ms)
+        command.extend(['-n', '1', '-w', '1000', concrete_ip])
     else:
         if use_ipv6:
             command.append('-6')
-        command.extend(['-c', '1', '-W', '1', ip])
+        # -n: no DNS lookups, -q: quiet summary, -c 1: count, -W 1: timeout (s)
+        command.extend(['-n', '-q', '-c', '1', '-W', '1', concrete_ip])
+
+    # Add a tiny initial jitter so many threads don't synchronize and spike the CPU at once
+    if ping_interval > 0:
+        stop_event.wait(timeout=random.uniform(0, min(0.3, ping_interval * 0.25)))
 
     while not stop_event.is_set():
         port_statuses: Optional[Dict[int, str]] = None
@@ -409,7 +517,12 @@ def ping_worker(
         
         try:
             # --- ICMP Ping ---
-            ping_output = subprocess.check_output(command, stderr=subprocess.STDOUT, text=True, creationflags=subprocess.CREATE_NO_WINDOW if is_windows else 0)
+            ping_output = subprocess.check_output(
+                command,
+                stderr=subprocess.STDOUT,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if is_windows else 0
+            )
             status = "Online"
             color = "green"
             latency_str = _parse_latency(ping_output, is_windows)
