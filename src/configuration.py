@@ -17,6 +17,9 @@ DEFAULT_CONFIG = {
     'ping_interval_seconds': 3,
     'port_check_timeout_seconds': 1,
     'default_ports_to_check': [21, 80, 161, 443],
+    # UI preferences
+    'ui_theme': 'System',            # Options: System, Light, Dark
+    'port_readability': 'Numbers',   # Options: Numbers, Simple
     # Users can edit, reorder, or remove browsers from the generated yaml.
     'browser_preferences': [
         {

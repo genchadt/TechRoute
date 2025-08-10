@@ -16,7 +16,7 @@ def main():
     if not messagebox.askyesno(
         "Security Warning",
         "This application will open a web browser with DISABLED security features.\n\n"
-        "Do NOT use this browser for normal web Browse!\n\n"
+        "Do NOT use this browser for normal web browsing!\n\n"
         "Do you want to continue?",
         icon='warning'
     ):

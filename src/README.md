@@ -40,9 +40,9 @@ This tool requires Python 3 and the `PyYAML` library.
     ```
 
 5. **Configure (First Run)**: The first time you run the app, it will create a `config.yaml` file in the same directory. You can open this file in a text editor to change settings.
-6. **Enter IPs**: In the application window, enter one IP address per line.
-    * To use default ports: `192.168.1.50`
-    * To specify custom ports: `192.168.1.51:80,443,8000`
+6. **Enter IPs or Hostnames**: In the application window, enter one IP or hostname per line.
+    * To use default ports: `192.168.1.50`, `printer.local`, or `fe80::1`
+    * To specify custom ports: `192.168.1.51:80,443,8000` or `[fe80::1]:80,443`
 7. **Start Pinging**: Click the "Start Pinging" button or use the `Ctrl+Enter` shortcut.
 
 ---
