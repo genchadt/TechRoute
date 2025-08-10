@@ -16,7 +16,7 @@ from typing import Dict, Any
 DEFAULT_CONFIG = {
     'ping_interval_seconds': 3,
     'port_check_timeout_seconds': 1,
-    'default_ports_to_check': [21, 80, 161, 443],
+    'default_ports_to_check': [80, 443, 631],
     # UI preferences
     'ui_theme': 'System',            # Options: System, Light, Dark
     'port_readability': 'Numbers',   # Options: Numbers, Simple
