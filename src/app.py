@@ -48,13 +48,6 @@ class TechRouteApp:
         except (tk.TclError, FileNotFoundError) as e:
             print(f"Warning: Could not load application icon. {e}")
 
-        # --- Platform-specific UI adjustments ---
-        width, height = (550, 320) # A width that fits content well, and a height that shows the empty status box
-        self.root.geometry(f"{width}x{height}")
-        self.root.minsize(width, 320)
-        self.initial_height = height
-        self.initial_width = width
-
         # --- State Variables ---
         self.is_pinging = False
         self.ping_threads: List[threading.Thread] = []
@@ -70,40 +63,17 @@ class TechRouteApp:
         # --- UI Setup ---
         self.ui = AppUI(self.root, self, browser_name)
 
-    def adjust_window_size(self, num_targets: int):
-        """
-        Adjusts the window height based on the number of targets.
-        This method is designed to be robust by measuring existing UI components.
-        """
-        # Force Tkinter to calculate all pending geometry changes
+        # --- Dynamic Initial Sizing ---
+        self.initial_width = 550
+        self.initial_height = 450 # Set a reasonable fixed initial height
+        
+        # Force Tkinter to compute the layout and widget sizes
         self.root.update_idletasks()
 
-        if num_targets == 0:
-            self.root.geometry(f"{self.initial_width}x{self.initial_height}")
-            self.ui.hide_scrollbar()
-            return
-
-        # Calculate the height of the static parts of the UI (everything above the status list)
-        base_ui_height = self.ui.status_container.winfo_y()
-
-        # Calculate the required height for the scrollable content frame
-        required_content_height = self.ui.status_frame.winfo_reqheight()
-
-        # Define a maximum height for the list area before a scrollbar appears
-        MAX_LIST_AREA_HEIGHT = 260 # Approx 8 rows
-
-        if required_content_height > MAX_LIST_AREA_HEIGHT:
-            display_list_height = MAX_LIST_AREA_HEIGHT
-            self.ui.show_scrollbar()
-        else:
-            display_list_height = required_content_height
-            self.ui.hide_scrollbar()
-
-        # The new height is the base UI + the list + the status bar + some padding
-        status_bar_height = self.ui.status_bar_frame.winfo_height()
-        new_height = base_ui_height + display_list_height + status_bar_height + 10 # 10 for bottom padding
-
-        self.root.geometry(f"{self.initial_width}x{new_height}")
+        # Set the initial size and the minimum size for the window.
+        # This ensures the window launches at a reasonable size.
+        self.root.geometry(f"{self.initial_width}x{self.initial_height}")
+        self.root.minsize(self.initial_width, 400) # Set a reasonable minimum height
 
     def update_config(self, new_config: Dict[str, Any]):
         """Updates the application's config and saves it."""
@@ -185,7 +155,6 @@ class TechRouteApp:
         self.ui.update_status_bar("Pinging targets...")
         self.ui.setup_status_display(targets)
         # Adjust window size *after* populating the UI
-        self.adjust_window_size(len(targets))
         self.ui.start_blinking_animation()
 
         # Update polling rate from UI
@@ -223,7 +192,6 @@ class TechRouteApp:
         self.ui.reset_status_indicator()
         # Clear status items and resize window back to initial state
         self.ui.setup_status_display([]) 
-        self.adjust_window_size(0)
 
     def launch_all_web_uis(self):
         """Launches web UIs for all targets with open web ports."""

@@ -165,8 +165,8 @@ class AppUI:
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
         # --- Configure grid layout ---
-        # DO NOT give row 2 weight, as this prevents the window from shrinking to fit content.
-        # The window resizing will be handled manually in the App class.
+        # Let the status container (row 2) expand vertically to fill space
+        self.main_frame.rowconfigure(2, weight=1)
         self.main_frame.columnconfigure(0, weight=1)
 
         # --- Top Controls Frame ---
@@ -206,13 +206,18 @@ class AppUI:
         # This frame will contain the actual status widgets
         self.status_frame = ttk.LabelFrame(self.status_canvas, text="Status", padding="10")
 
-        self.status_canvas.create_window((0, 0), window=self.status_frame, anchor="nw")
+        self.status_frame_window = self.status_canvas.create_window((0, 0), window=self.status_frame, anchor="nw")
         self.status_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         # Initially hide the scrollbar
         self.hide_scrollbar()
 
-        self.status_frame.bind("<Configure>", lambda e: self.status_canvas.configure(scrollregion=self.status_canvas.bbox("all")))
+        # Bind events to handle resizing of the frame within the canvas
+        self.status_frame.bind("<Configure>", self._on_status_frame_configure)
+        self.status_canvas.bind("<Configure>", self._on_canvas_configure)
+
+        # Set up the initial empty state
+        self.setup_status_display([])
 
 
         ttk.Label(self.input_frame, text="Enter IPs, one per line (e.g., 192.168.1.50:80,443):").pack(pady=5)
@@ -240,6 +245,15 @@ class AppUI:
 
         self.root.bind('<Control-Return>', lambda event: self.app_controller.toggle_ping_process())
         self.root.bind('<Alt-s>', lambda event: self.start_stop_button.invoke())
+
+    def _on_canvas_configure(self, event: tk.Event):
+        """When the canvas is resized, update the width of the frame inside it."""
+        canvas_width = event.width
+        self.status_canvas.itemconfig(self.status_frame_window, width=canvas_width)
+
+    def _on_status_frame_configure(self, event: tk.Event):
+        """When the frame's content changes size, update the canvas scroll region."""
+        self.status_canvas.configure(scrollregion=self.status_canvas.bbox("all"))
 
     def start_blinking_animation(self):
         """Starts a blinking animation with question marks."""
@@ -315,10 +329,25 @@ class AppUI:
         self.status_bar_label.config(text=message)
 
     def setup_status_display(self, targets: List[Dict[str, Any]]):
-        """Creates the initial status widgets for each IP address."""
+        """
+        Creates status widgets for each target or a placeholder if the list is empty.
+        """
         for widget in self.status_frame.winfo_children():
             widget.destroy()
         self.status_widgets.clear()
+
+        if not targets:
+            # Add a simple label as a placeholder. The layout management will handle sizing.
+            placeholder = ttk.Label(self.status_frame, text="Waiting for targets...", foreground="gray")
+            placeholder.pack(pady=10, padx=10)
+            self.hide_scrollbar()
+            return
+
+        # Show scrollbar only if there are more than a few items.
+        if len(targets) > 8:
+            self.show_scrollbar()
+        else:
+            self.hide_scrollbar()
 
         for target in targets:
             original_string, ports = target['original_string'], target['ports']
