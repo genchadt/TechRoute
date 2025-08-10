@@ -19,9 +19,15 @@ class DialogsMixin:
 
     def _open_ports_dialog(self: UIContext):
         """Opens a dialog to edit the default ports."""
+        import platform
         dialog = tk.Toplevel(self.root)
         dialog.title("Default Ports")
-        dialog.geometry("300x250")
+        # Default size
+        width, height = 300, 250
+        if platform.system() == "Linux":
+            width = int(width * 1.15)
+            height = int(height * 1.15)
+        dialog.geometry(f"{width}x{height}")
         dialog.transient(self.root)
         dialog.grab_set()
 
