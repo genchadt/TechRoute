@@ -34,17 +34,18 @@ class TechRouteApp:
 
         # Set application icon
         try:
-            # Use absolute paths for icons, assuming they are in the root directory
             base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-            icon_path_ico = os.path.join(base_dir, "icon.ico")
             icon_path_png = os.path.join(base_dir, "icon.png")
-            
-            if os.path.exists(icon_path_ico):
-                self.root.iconbitmap(icon_path_ico)
-            elif os.path.exists(icon_path_png):
-                # For other OSes or if .ico is not supported
+
+            # Using PhotoImage is more portable, especially for Linux.
+            if os.path.exists(icon_path_png):
                 photo = tk.PhotoImage(file=icon_path_png)
                 self.root.iconphoto(False, photo)
+            # Fallback to .ico for Windows if .png is not found
+            elif platform.system() == "Windows":
+                icon_path_ico = os.path.join(base_dir, "icon.ico")
+                if os.path.exists(icon_path_ico):
+                    self.root.iconbitmap(icon_path_ico)
         except (tk.TclError, FileNotFoundError) as e:
             print(f"Warning: Could not load application icon. {e}")
 
@@ -64,16 +65,18 @@ class TechRouteApp:
         self.ui = AppUI(self.root, self, browser_name)
 
         # --- Dynamic Initial Sizing ---
-        self.initial_width = 550
-        self.initial_height = 450 # Set a reasonable fixed initial height
-        
         # Force Tkinter to compute the layout and widget sizes
         self.root.update_idletasks()
 
+        # Get the minimum required size for the window to fit all content
+        required_width = self.root.winfo_reqwidth()
+        required_height = self.root.winfo_reqheight()
+
         # Set the initial size and the minimum size for the window.
-        # This ensures the window launches at a reasonable size.
-        self.root.geometry(f"{self.initial_width}x{self.initial_height}")
-        self.root.minsize(self.initial_width, 400) # Set a reasonable minimum height
+        # This ensures the window launches at a reasonable size and cannot be
+        # resized smaller than required to display all widgets.
+        self.root.geometry(f"{required_width}x{required_height}")
+        self.root.minsize(required_width, required_height)
 
     def update_config(self, new_config: Dict[str, Any]):
         """Updates the application's config and saves it."""

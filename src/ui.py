@@ -153,12 +153,12 @@ class AppUI:
         self.status_bar_frame = ttk.Frame(self.root)
         self.status_bar_frame.pack(side=tk.BOTTOM, fill=tk.X)
         
-        self.status_bar_label = ttk.Label(self.status_bar_frame, text="Ready.", relief=tk.SUNKEN, anchor=tk.W, padding=2)
+        self.status_bar_label = ttk.Label(self.status_bar_frame, text="Ready.", relief=tk.SUNKEN, anchor=tk.W, padding=(2, 5))
         self.status_bar_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         # Use a monospace font for the indicator to prevent width changes during animation
         mono_font = tkfont.Font(family="Courier", size=10)
-        self.status_indicator = ttk.Label(self.status_bar_frame, text="💻 ? ? ? ? ? 📠", relief=tk.SUNKEN, width=15, anchor=tk.CENTER, padding=(5,2), font=mono_font)
+        self.status_indicator = ttk.Label(self.status_bar_frame, text="💻 ? ? ? ? ? 📠", relief=tk.SUNKEN, width=15, anchor=tk.CENTER, padding=(5, 5), font=mono_font)
         self.status_indicator.pack(side=tk.RIGHT)
 
         self.main_frame = ttk.Frame(self.root, padding="10")
