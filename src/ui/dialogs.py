@@ -2,6 +2,7 @@
 Dialogs for the TechRoute UI.
 """
 from __future__ import annotations
+import platform
 import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import TYPE_CHECKING
@@ -16,11 +17,10 @@ if TYPE_CHECKING:
 class DialogsMixin:
     root: tk.Tk
     app_controller: "TechRouteApp"
-
     def _open_ports_dialog(self: UIContext):
         """Opens a dialog to edit the default ports."""
-        import platform
         dialog = tk.Toplevel(self.root)
+        dialog.title("Default Ports")
         dialog.title("Default Ports")
         # Default size
         width, height = 300, 250
@@ -131,7 +131,12 @@ class DialogsMixin:
         import webbrowser
         dialog = tk.Toplevel(self.root)
         dialog.title("UDP Services")
-        dialog.geometry("360x300")
+        width, height = 360, 300
+        if platform.system() == "Linux":
+            width = int(width * 1.25)
+            height = int(height * 1.25)
+            
+        dialog.geometry(f"{width}x{height}")
         dialog.transient(self.root)
         dialog.grab_set()
 
