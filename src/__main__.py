@@ -1,5 +1,3 @@
-# src/__main__.py
-
 """
 Entry point for the TechRoute application.
 
@@ -16,7 +14,7 @@ from tkinter import messagebox
 from .app import TechRouteApp
 
 
-def _set_windows_appusermodelid():
+def _set_windows_appusermodelid() -> None:
     """Sets the Windows AppUserModelID for proper taskbar icon/grouping."""
     if platform.system() != "Windows":
         return
@@ -54,11 +52,38 @@ def _apply_default_icons(root: tk.Tk) -> None:
         pass
 
 
-def main():
+def _apply_platform_window_constraints(root: tk.Tk) -> None:
+    """Apply platform-specific window sizing/resizing constraints.
+
+    Linux: allow manual resizing with a minimum set later; cap max width at 35% of screen,
+    full screen height. Windows: allow full screen width/height when maximized.
+    Other platforms: no explicit caps.
+    """
+    try:
+        system = platform.system()
+        screen_w = max(1, root.winfo_screenwidth())
+        screen_h = max(1, root.winfo_screenheight())
+
+        if system == "Linux":
+            max_w = max(300, int(screen_w * 0.35))
+            root.maxsize(max_w, screen_h)
+            root.resizable(True, True)
+        elif system == "Windows":
+            root.maxsize(screen_w, screen_h)
+            root.resizable(True, True)
+        else:
+            # Ensure resizable on other platforms without max caps
+            root.resizable(True, True)
+    except Exception:
+        # Best-effort; if querying screen size fails, proceed without hard caps
+        pass
+
+
+def main() -> None:
     """Main function to start the application."""
     # Ensure proper Windows taskbar icon/grouping before any windows are created
     _set_windows_appusermodelid()
-    
+
     proceed = messagebox.askyesno(
         "Security Warning",
         "This application will open a web browser with DISABLED security features.\n\n"
@@ -68,36 +93,13 @@ def main():
     )
     if not proceed:
         return
-    
+
     try:
         root = tk.Tk()
         # Hide the main window while showing the initial warning dialog
         root.withdraw()
         _apply_default_icons(root)
-
-        # On Linux, constrain window resizing behavior to meet UX requirements:
-        # - Allow manual resizing with a minimum size set later by the app
-        # - Cap the maximum size to 35% of screen width and full screen height
-        try:
-            if platform.system() == "Linux":
-                screen_w = max(1, root.winfo_screenwidth())
-                screen_h = max(1, root.winfo_screenheight())
-                max_w = max(300, int(screen_w * 0.35))
-                max_h = screen_h  # Full available height
-                root.maxsize(max_w, max_h)
-                # Ensure the window is user-resizable
-                root.resizable(True, True)
-            elif platform.system() == "Windows":
-                # Ensure Windows can reach full screen height/width when maximized
-                screen_w = max(1, root.winfo_screenwidth())
-                screen_h = max(1, root.winfo_screenheight())
-                root.maxsize(screen_w, screen_h)
-                root.resizable(True, True)
-        except Exception:
-            # Best-effort: if querying screen size fails, proceed without hard caps
-            pass
-
-
+        _apply_platform_window_constraints(root)
 
         # Show the main window and start the app
         root.deiconify()
