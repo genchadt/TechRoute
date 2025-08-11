@@ -125,3 +125,84 @@ class DialogsMixin:
         # Make layout a bit nicer
         content.columnconfigure(1, weight=1)
         self.root.wait_window(dialog)
+
+    def _open_udp_services_dialog(self: UIContext):
+        """Opens a dialog to select UDP services to check (future feature)."""
+        import webbrowser
+        dialog = tk.Toplevel(self.root)
+        dialog.title("UDP Services")
+        dialog.geometry("360x300")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        content = ttk.Frame(dialog, padding=10)
+        content.pack(fill=tk.BOTH, expand=True)
+
+        # Groupbox for UDP Services
+        group = ttk.LabelFrame(content, text="UDP Services", padding=10)
+        group.pack(fill=tk.BOTH, expand=True)
+
+        # Service list with ports and names
+        services = [
+            (427, "SLP"),
+            (5353, "mDNS"),
+            (3702, "WS-Discovery"),
+            (161, "SNMP"),
+        ]
+
+        # Build checkboxes
+        vars_map: dict[int, tk.BooleanVar] = {}
+        for idx, (port, name) in enumerate(services):
+            var = tk.BooleanVar(value=False)
+            vars_map[port] = var
+            # Example label: "427 SLP"
+            cb = ttk.Checkbutton(group, text=f"{port} {name}", variable=var)
+            cb.grid(row=idx, column=0, sticky="w", pady=(0, 2))
+
+        # Select All
+        select_all_var = tk.BooleanVar(value=False)
+        def toggle_all():
+            val = select_all_var.get()
+            for v in vars_map.values():
+                v.set(val)
+        ttk.Checkbutton(group, text="SELECT ALL", variable=select_all_var, command=toggle_all).grid(row=len(services), column=0, sticky="w", pady=(6, 0))
+
+        # Accreditation / link area
+        accreditation_frame = ttk.Frame(content)
+        accreditation_frame.pack(fill=tk.X, pady=(8, 0))
+        
+        desc = ttk.Label(accreditation_frame, text="UDP detection powered by nmap (planned).")
+        desc.pack(anchor="w")
+
+        link_frame = ttk.Frame(accreditation_frame)
+        link_frame.pack(anchor="w")
+
+        def open_link(event=None):
+            try:
+                webbrowser.open_new_tab("https://nmap.org")
+            except Exception:
+                pass
+        
+        learn_more_label = ttk.Label(link_frame, text="Learn more: ")
+        learn_more_label.pack(side=tk.LEFT)
+        
+        link = ttk.Label(link_frame, text="nmap.org", foreground="blue", cursor="hand2")
+        link.pack(side=tk.LEFT)
+        link.bind("<Button-1>", open_link)
+
+        # Buttons
+        btns = ttk.Frame(content)
+        btns.pack(pady=(10, 0))
+
+        def save_services():
+            # For now we just persist chosen UDP service ports into config under 'udp_services_to_check'
+            selected_ports = sorted([p for p, v in vars_map.items() if v.get()])
+            new_config = self.app_controller.config.copy()
+            new_config['udp_services_to_check'] = selected_ports
+            self.app_controller.update_config(new_config)
+            dialog.destroy()
+
+        ttk.Button(btns, text="Save", command=save_services).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+
+        self.root.wait_window(dialog)

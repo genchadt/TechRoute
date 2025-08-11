@@ -89,6 +89,7 @@ class BuilderMixin:
         self.controls_frame.grid(row=0, column=0, sticky="ew")
         self.controls_frame.columnconfigure(1, weight=1)
 
+        # Left controls
         left_controls_frame = ttk.Frame(self.controls_frame)
         left_controls_frame.grid(row=0, column=0, sticky="w")
         ttk.Label(left_controls_frame, text="Polling Rate (ms):", underline=0).pack(side=tk.LEFT, padx=(0, 5))
@@ -97,7 +98,10 @@ class BuilderMixin:
         self.polling_rate_entry.insert(0, str(int(self.app_controller.config.get("ping_interval_seconds", 3) * 1000)))
         self.ports_button = ttk.Button(left_controls_frame, text="Ports...", underline=1, command=self._open_ports_dialog)
         self.ports_button.pack(side=tk.LEFT)
+        self.services_button = ttk.Button(left_controls_frame, text="UDP Services...", underline=0, command=self._open_udp_services_dialog)
+        self.services_button.pack(side=tk.LEFT, padx=(8, 0))
 
+        # Right controls
         right_controls_frame = ttk.Frame(self.controls_frame)
         right_controls_frame.grid(row=0, column=2, sticky="e")
         self.update_button = ttk.Button(right_controls_frame, text="Update", underline=0, command=self.app_controller.update_ping_process)
@@ -176,6 +180,7 @@ class BuilderMixin:
         self.root.bind("<Alt-s>", lambda event: self.start_stop_button.invoke())
         self.root.bind("<Alt-l>", lambda event: self.launch_all_button.invoke())
         self.root.bind("<Alt-o>", lambda event: self.ports_button.invoke())
+        self.root.bind("<Alt-n>", lambda event: self.services_button.invoke())
         self.root.bind("<Alt-u>", lambda event: self.update_button.invoke())
         self.root.bind("<Alt-c>", lambda event: self.app_controller.clear_statuses())
         self.root.bind("<Alt-a>", lambda event: self.app_controller.add_localhost_to_input())
