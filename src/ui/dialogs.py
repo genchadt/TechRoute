@@ -165,7 +165,7 @@ class DialogsMixin:
             val = select_all_var.get()
             for v in vars_map.values():
                 v.set(val)
-        ttk.Checkbutton(group, text="SELECT ALL", variable=select_all_var, command=toggle_all).grid(row=len(services), column=0, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(group, text="Select All", variable=select_all_var, command=toggle_all).grid(row=len(services), column=0, sticky="w", pady=(6, 0))
 
         # Accreditation / link area
         accreditation_frame = ttk.Frame(content)
