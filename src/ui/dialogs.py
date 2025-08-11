@@ -17,17 +17,33 @@ if TYPE_CHECKING:
 class DialogsMixin:
     root: tk.Tk
     app_controller: "TechRouteApp"
+
+    def _center_dialog(self, dialog: tk.Toplevel, width: int, height: int):
+        """Centers the dialog on the main window."""
+        # Ensure the main window's geometry is up-to-date
+        self.root.update_idletasks()
+        
+        parent_x = self.root.winfo_x()
+        parent_y = self.root.winfo_y()
+        parent_width = self.root.winfo_width()
+        parent_height = self.root.winfo_height()
+
+        # Calculate the position for the dialog to be centered
+        x = parent_x + (parent_width // 2) - (width // 2)
+        y = parent_y + (parent_height // 2) - (height // 2)
+        
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+
     def _open_ports_dialog(self: UIContext):
         """Opens a dialog to edit the default ports."""
         dialog = tk.Toplevel(self.root)
-        dialog.title("Default Ports")
         dialog.title("Default Ports")
         # Default size
         width, height = 300, 250
         if platform.system() == "Linux":
             width = int(width * 1.25)
             height = int(height * 1.15)
-        dialog.geometry(f"{width}x{height}")
+        self._center_dialog(dialog, width, height)
         dialog.transient(self.root)
         dialog.grab_set()
 
@@ -112,11 +128,11 @@ class DialogsMixin:
         dialog = tk.Toplevel(self.root)
         dialog.title("Settings")
         
-        width, height = 380, 220
+        width, height = 380, 240
         if platform.system() == "Linux":
             width = int(width * 1.25)
             height = int(height * 1.25)
-        dialog.geometry(f"{width}x{height}")
+        self._center_dialog(dialog, width, height)
         dialog.transient(self.root)
         dialog.grab_set()
 
@@ -130,25 +146,27 @@ class DialogsMixin:
         theme_combo = ttk.Combobox(content, textvariable=theme_var, values=theme_values, state='readonly', width=20)
         theme_combo.grid(row=0, column=1, sticky='w', pady=(0, 8), padx=(8, 0))
 
-        # Port readability as a simple switch (Checkbutton): checked = Simple, unchecked = Numbers
-        port_simple_default = self.app_controller.config.get('port_readability', 'Numbers') == 'Simple'
-        port_simple_var = tk.BooleanVar(value=port_simple_default)
-        port_switch = ttk.Checkbutton(content, text="Port readability: Simple", variable=port_simple_var)
-        port_switch.grid(row=1, column=0, columnspan=2, sticky='w', pady=(0, 8))
+        # --- Port Readability Radio Buttons ---
+        readability_frame = ttk.LabelFrame(content, text="Port Readability", padding=5)
+        readability_frame.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(8, 0))
 
-        # Note/explanation
-        note = ttk.Label(content, text="Simple shows names (FTP, HTTP, HTTPS), Numbers shows raw port numbers.", foreground='gray')
-        note.grid(row=2, column=0, columnspan=2, sticky='w', pady=(0, 8))
+        port_readability_var = tk.StringVar(value=self.app_controller.config.get('port_readability', 'Numbers'))
+
+        simple_radio = ttk.Radiobutton(readability_frame, text="Simple (e.g., HTTP, FTP)", variable=port_readability_var, value="Simple")
+        simple_radio.pack(anchor='w', padx=5, pady=(2, 0))
+
+        numbers_radio = ttk.Radiobutton(readability_frame, text="Numbers (e.g., 80, 21)", variable=port_readability_var, value="Numbers")
+        numbers_radio.pack(anchor='w', padx=5, pady=(0, 4))
 
         # Buttons
         btns = ttk.Frame(content)
-        btns.grid(row=3, column=0, columnspan=2, pady=(10, 0))
+        btns.grid(row=2, column=0, columnspan=2, pady=(10, 0))
 
         def save_settings():
             new_config = self.app_controller.config.copy()
             new_config['ui_theme'] = theme_var.get()
-            new_config['port_readability'] = 'Simple' if port_simple_var.get() else 'Numbers'
-            self.app_controller.update_config(new_config)  # save only; applying behavior is future work
+            new_config['port_readability'] = port_readability_var.get()
+            self.app_controller.update_config(new_config)
             dialog.destroy()
 
         ttk.Button(btns, text="Save", command=save_settings).pack(side=tk.LEFT, padx=5)
@@ -168,7 +186,7 @@ class DialogsMixin:
             width = int(width * 1.25)
             height = int(height * 1.25)
             
-        dialog.geometry(f"{width}x{height}")
+        self._center_dialog(dialog, width, height)
         dialog.transient(self.root)
         dialog.grab_set()
 

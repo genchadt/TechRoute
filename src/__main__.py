@@ -84,23 +84,25 @@ def main() -> None:
     # Ensure proper Windows taskbar icon/grouping before any windows are created
     _set_windows_appusermodelid()
 
+    # Create root window first (hidden), apply icons before any dialogs
+    root = tk.Tk()
+    root.withdraw()
+    _apply_default_icons(root)
+    _apply_platform_window_constraints(root)
+
     proceed = messagebox.askyesno(
         "Security Warning",
         "This application will open a web browser with DISABLED security features.\n\n"
         "Do NOT use this browser for normal web browsing!\n\n"
         "Do you want to continue?",
         icon="warning",
+        parent=root,  # Ensure dialog is associated with the root window
     )
     if not proceed:
+        root.destroy()
         return
 
     try:
-        root = tk.Tk()
-        # Hide the main window while showing the initial warning dialog
-        root.withdraw()
-        _apply_default_icons(root)
-        _apply_platform_window_constraints(root)
-
         # Show the main window and start the app
         root.deiconify()
         app = TechRouteApp(root)
@@ -108,7 +110,7 @@ def main() -> None:
     except Exception as e:
         # If something fails before the root exists, fall back to a plain messagebox
         try:
-            messagebox.showerror("Critical Error", f"A critical error occurred:\n{e}")
+            messagebox.showerror("Critical Error", f"A critical error occurred:\n{e}", parent=root)
         except Exception:
             raise
 
