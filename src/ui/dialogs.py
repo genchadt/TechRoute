@@ -184,11 +184,12 @@ class DialogsMixin:
 
         # Build checkboxes
         vars_map: dict[int, tk.BooleanVar] = {}
+        selected_existing = set(self.app_controller.config.get('udp_services_to_check', []) or [])
         for idx, (port, name) in enumerate(services):
-            var = tk.BooleanVar(value=False)
+            var = tk.BooleanVar(value=(int(port) in selected_existing))
             vars_map[port] = var
-            # Example label: "427 SLP"
-            cb = ttk.Checkbutton(group, text=f"{port} {name}", variable=var)
+            # Example label: "SLP (427)"
+            cb = ttk.Checkbutton(group, text=f"{name} ({port})", variable=var)
             cb.grid(row=idx, column=0, sticky="w", pady=(0, 2))
 
         # Select All
@@ -227,8 +228,8 @@ class DialogsMixin:
         btns.pack(pady=(10, 0))
 
         def save_services():
-            # For now we just persist chosen UDP service ports into config under 'udp_services_to_check'
-            selected_ports = sorted([p for p, v in vars_map.items() if v.get()])
+            # Persist chosen UDP service ports into config under 'udp_services_to_check'
+            selected_ports = sorted(int(p) for p, v in vars_map.items() if v.get())
             new_config = self.app_controller.config.copy()
             new_config['udp_services_to_check'] = selected_ports
             self.app_controller.update_config(new_config)

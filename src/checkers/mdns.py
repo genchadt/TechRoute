@@ -22,13 +22,14 @@ class _AnyServiceListener(ServiceListener):
         super().__init__()
         self.seen = False
 
-    def add_service(self, zc: object, stype: str, name: str) -> None:  # pragma: no cover - callbacks
+    def add_service(self, *args, **kwargs) -> None:  # pragma: no cover - callbacks
+        # Accept both positional and keyword styles from zeroconf
         self.seen = True
 
-    def update_service(self, zc: object, stype: str, name: str) -> None:  # pragma: no cover - callbacks
+    def update_service(self, *args, **kwargs) -> None:  # pragma: no cover - callbacks
         self.seen = True
 
-    def remove_service(self, zc: object, stype: str, name: str) -> None:  # pragma: no cover - callbacks
+    def remove_service(self, *args, **kwargs) -> None:  # pragma: no cover - callbacks
         pass
 
 
@@ -48,6 +49,7 @@ class MDNSChecker(BaseChecker):
             zc = Zeroconf()
             listener = _AnyServiceListener()
             # Browse a common service type; _services._dns-sd._udp.local. lists types
+            # Newer zeroconf prefers 'listener=' arg; handlers still supported.
             ServiceBrowser(
                 zc,
                 "_services._dns-sd._udp.local.",

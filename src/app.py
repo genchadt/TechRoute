@@ -395,9 +395,22 @@ class TechRouteApp:
                 message = self.update_queue.get_nowait()
 
                 # Unpack the main status update
-                original_string, status, color, port_statuses, latency_str, web_port_open = message
+                # Support both old (without UDP) and new (with UDP) tuples
+                if len(message) >= 7:
+                    original_string, status, color, port_statuses, latency_str, web_port_open, udp_service_statuses = message
+                else:
+                    original_string, status, color, port_statuses, latency_str, web_port_open = message
+                    udp_service_statuses = None
 
-                self.ui.update_status_in_gui(original_string, status, color, port_statuses, latency_str, web_port_open)
+                self.ui.update_status_in_gui(
+                    original_string,
+                    status,
+                    color,
+                    port_statuses,
+                    latency_str,
+                    web_port_open,
+                    udp_service_statuses,
+                )
 
                 if web_port_open:
                     host = self._extract_host(original_string)

@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Dict, Any, List, Optional, TYPE_CHECKING, cast
 from .types import UIContext
+from ..checkers import get_udp_service_registry
 
 if TYPE_CHECKING:
     from ..app import TechRouteApp
@@ -65,7 +66,7 @@ class StatusViewMixin:
             label = ttk.Label(row_frame, text=f"{original_string}: Pinging...")
             label.grid(row=0, column=1, sticky='w')
 
-            # Frame to hold port status labels
+            # Frame to hold TCP port status labels and UDP service labels
             port_frame = ttk.Frame(row_frame)
             port_frame.grid(row=0, column=2, sticky='e')
 
@@ -95,10 +96,39 @@ class StatusViewMixin:
 
                     port_widgets[port] = port_button
 
+            # UDP services: use service names as labels
+            udp_widgets: Dict[str, tk.Button] = {}
+            try:
+                udp_ports_cfg = self.app_controller.config.get('udp_services_to_check', []) or []
+                if udp_ports_cfg:
+                    registry = get_udp_service_registry()
+                    for udp_port in udp_ports_cfg:
+                        entry = registry.get(int(udp_port))
+                        if not entry:
+                            continue
+                        service_name, _checker = entry
+                        udp_btn = tk.Button(
+                            port_frame,
+                            text=service_name,
+                            bg="gray",
+                            fg="white",
+                            disabledforeground="white",
+                            relief="raised",
+                            borderwidth=1,
+                            state=tk.DISABLED,
+                            padx=4,
+                            pady=1,
+                        )
+                        udp_btn.pack(side=tk.LEFT, padx=2)
+                        udp_widgets[service_name] = udp_btn
+            except Exception:
+                pass
+
             self.status_widgets[original_string] = {
                 "label": label,
                 "ping_button": ping_button,  # Replaces 'indicator' and 'ui_button'
                 "port_widgets": port_widgets,
+                "udp_widgets": udp_widgets,
             }
 
         # After building the list, update canvas height (avoid resizing the window here)
@@ -107,7 +137,7 @@ class StatusViewMixin:
         except Exception:
             pass
 
-    def update_status_in_gui(self: UIContext, original_string: str, status: str, color: str, port_statuses: Optional[Dict[int, str]], latency_str: str, web_port_open: bool):
+    def update_status_in_gui(self: UIContext, original_string: str, status: str, color: str, port_statuses: Optional[Dict[int, str]], latency_str: str, web_port_open: bool, udp_service_statuses: Optional[Dict[str, str]] = None):
         """Updates the GUI widgets for a specific IP. Must be called from the main thread."""
         if original_string in self.status_widgets:
             widgets = self.status_widgets[original_string]
@@ -140,10 +170,23 @@ class StatusViewMixin:
                                 cursor=("hand2" if is_open else "")
                             )
 
+            # Update UDP service widgets
+            if udp_service_statuses:
+                udp_widgets = widgets.get("udp_widgets", {})
+                for svc_name, svc_status in udp_service_statuses.items():
+                    btn = udp_widgets.get(svc_name)
+                    if btn is not None:
+                        is_open = (svc_status == "Open")
+                        btn.config(bg=("green" if is_open else "red"), fg="white")
+
             # When pinging stops, clear port status text
             elif not self.app_controller.is_pinging:
                 port_widgets = widgets.get("port_widgets", {})
                 for port, widget in port_widgets.items():
+                    widget.config(bg="gray", state=tk.DISABLED, cursor="", fg="white")
+
+                # Reset UDP service widgets as well
+                for _name, widget in widgets.get("udp_widgets", {}).items():
                     widget.config(bg="gray", state=tk.DISABLED, cursor="", fg="white")
 
                 # Also reset the ping button explicitly to DISABLED

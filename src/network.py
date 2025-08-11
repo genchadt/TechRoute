@@ -512,6 +512,7 @@ def ping_worker(
 
     while not stop_event.is_set():
         port_statuses: Optional[Dict[int, str]] = None
+        udp_service_statuses: Optional[Dict[str, str]] = None
         latency_str = ""
         web_port_open = False
         
@@ -535,10 +536,40 @@ def ping_worker(
                     port_statuses[port] = port_status
                     if port_status == 'Open' and port in [80, 443, 8080]:
                         web_port_open = True
+            # --- UDP Service Checks (optional) ---
+            try:
+                udp_ports = app_config.get('udp_services_to_check', []) or []
+                if udp_ports:
+                    # Local import to avoid heavy deps on module import
+                    from .checkers import get_udp_service_registry  # type: ignore
+                    registry = get_udp_service_registry()
+                    udp_service_statuses = {}
+                    for udp_port in udp_ports:
+                        entry = registry.get(int(udp_port))
+                        if not entry:
+                            continue
+                        service_name, checker = entry
+                        try:
+                            res = checker.check(ip, timeout=max(0.5, min(2.0, port_timeout)))
+                            udp_service_statuses[service_name] = "Open" if res.available else "Closed"
+                        except Exception:
+                            udp_service_statuses[service_name] = "Closed"
+            except Exception:
+                # If anything goes wrong, skip UDP checks quietly
+                pass
             
         except (subprocess.CalledProcessError, FileNotFoundError):
             status = "Offline"
             color = "red"
-        
-        update_queue.put((original_string, status, color, port_statuses, latency_str, web_port_open))
+
+        # Queue result for UI
+        update_queue.put((
+            original_string,
+            status,
+            color,
+            port_statuses,
+            latency_str,
+            web_port_open,
+            udp_service_statuses,
+        ))
         stop_event.wait(timeout=ping_interval)
