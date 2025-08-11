@@ -88,6 +88,15 @@ class BuilderMixin:
         try:
             if event.widget is not self.root:
                 return
+            # Ignore Configure events that don't change size (pure moves)
+            try:
+                last_size = getattr(self, "_last_root_size", None)
+                current_size = (int(event.width), int(event.height))
+                if last_size == current_size:
+                    return
+                setattr(self, "_last_root_size", current_size)
+            except Exception:
+                pass
             setattr(self, "_resizing_active", True)
             job = getattr(self, "_resize_debounce_job", None)
             if job:
@@ -121,6 +130,7 @@ class BuilderMixin:
         setattr(self, "_resizing_active", False)
         setattr(self, "_resize_debounce_job", None)  # type: ignore[attr-defined]
         setattr(self, "_last_canvas_width", None)  # type: ignore[attr-defined]
+        setattr(self, "_last_root_size", None)  # type: ignore[attr-defined]
 
         # Status Bar
         self.status_bar_frame = ttk.Frame(self.root)
@@ -187,14 +197,18 @@ class BuilderMixin:
         ttk.Button(quick_row, text="Add localhost", underline=0, command=self.app_controller.add_localhost_to_input).pack(side=tk.LEFT)
         ttk.Button(quick_row, text="Add Gateway", underline=4, command=self.app_controller.add_gateway_to_input).pack(side=tk.LEFT, padx=(5, 0))
 
+        # Input text area with scrollbars
         text_frame = ttk.Frame(self.input_frame)
         text_frame.pack(pady=5, fill=tk.X, expand=True)
-        self.ip_entry = tk.Text(text_frame, width=60, height=6)
+        self.ip_entry = tk.Text(text_frame, width=60, height=6, wrap="none")
         self.ip_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.ip_entry.focus()
-        scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=self.ip_entry.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.ip_entry.config(yscrollcommand=scrollbar.set)
+        vscrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=self.ip_entry.yview)
+        vscrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.ip_entry.config(yscrollcommand=vscrollbar.set)
+        hscrollbar = ttk.Scrollbar(self.input_frame, orient=tk.HORIZONTAL, command=self.ip_entry.xview)
+        hscrollbar.pack(fill=tk.X)
+        self.ip_entry.config(xscrollcommand=hscrollbar.set)
 
         # Status Area with optional Scrollbar
         self.status_container = ttk.Frame(self.main_frame)

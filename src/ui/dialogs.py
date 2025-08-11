@@ -111,7 +111,12 @@ class DialogsMixin:
         """Opens the Settings dialog (form only)."""
         dialog = tk.Toplevel(self.root)
         dialog.title("Settings")
-        dialog.geometry("380x220")
+        
+        width, height = 380, 220
+        if platform.system() == "Linux":
+            width = int(width * 1.25)
+            height = int(height * 1.25)
+        dialog.geometry(f"{width}x{height}")
         dialog.transient(self.root)
         dialog.grab_set()
 
