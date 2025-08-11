@@ -55,8 +55,8 @@ def _apply_default_icons(root: tk.Tk) -> None:
 def _apply_platform_window_constraints(root: tk.Tk) -> None:
     """Apply platform-specific window sizing/resizing constraints.
 
-    Linux: allow manual resizing with a minimum set later; cap max width at 35% of screen,
-    full screen height. Windows: allow full screen width/height when maximized.
+    Linux: allow manual resizing; no artificial width cap.
+    Windows: allow full screen width/height when maximized.
     Other platforms: no explicit caps.
     """
     try:
@@ -65,8 +65,8 @@ def _apply_platform_window_constraints(root: tk.Tk) -> None:
         screen_h = max(1, root.winfo_screenheight())
 
         if system == "Linux":
-            max_w = max(300, int(screen_w * 0.35))
-            root.maxsize(max_w, screen_h)
+            # Allow full width/height; rely on the WM to manage constraints.
+            root.maxsize(screen_w, screen_h)
             root.resizable(True, True)
         elif system == "Windows":
             root.maxsize(screen_w, screen_h)

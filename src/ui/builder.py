@@ -27,19 +27,57 @@ class BuilderMixin:
         canvas_width = event.width
         try:
             last = getattr(self, "_last_canvas_width", None)
-            if last != canvas_width:
-                self.status_canvas.itemconfig(self.status_frame_window, width=canvas_width)
-                setattr(self, "_last_canvas_width", canvas_width)
+            if last == canvas_width:
+                return
+            setattr(self, "_last_canvas_width", canvas_width)
+
+            # Coalesce width updates to avoid thrash during drag
+            job_attr = "_canvas_width_job"
+            job_id = getattr(self, job_attr, None)
+            if job_id:
+                try:
+                    self.root.after_cancel(job_id)
+                except Exception:
+                    pass
+
+            def _apply_width():
+                try:
+                    self.status_canvas.itemconfig(self.status_frame_window, width=canvas_width)
+                finally:
+                    setattr(self, job_attr, None)
+
+            setattr(self, job_attr, self.root.after_idle(_apply_width))
         except Exception:
             self.status_canvas.itemconfig(self.status_frame_window, width=canvas_width)
 
     def _on_status_frame_configure(self: UIContext, event: tk.Event) -> None:
-        self.status_canvas.configure(scrollregion=self.status_canvas.bbox("all"))
+        # Coalesce scrollregion updates; skip while actively dragging to reduce thrash
         try:
-            if not getattr(self, "_resizing_active", False):
-                self._schedule_status_canvas_height_update()
+            if getattr(self, "_resizing_active", False):
+                return
         except Exception:
             pass
+
+        job_attr = "_scrollregion_job"
+        job_id = getattr(self, job_attr, None)
+        if job_id:
+            try:
+                self.root.after_cancel(job_id)
+            except Exception:
+                pass
+
+        def _apply_scrollregion():
+            try:
+                self.status_canvas.configure(scrollregion=self.status_canvas.bbox("all"))
+                # Schedule height update after layout has settled
+                try:
+                    self._schedule_status_canvas_height_update()
+                except Exception:
+                    pass
+            finally:
+                setattr(self, job_attr, None)
+
+        setattr(self, job_attr, self.root.after_idle(_apply_scrollregion))
 
     def _on_root_configure(self: UIContext, event: tk.Event) -> None:
         try:
@@ -59,7 +97,7 @@ class BuilderMixin:
                     self._schedule_status_canvas_height_update()
                 except Exception:
                     pass
-            setattr(self, "_resize_debounce_job", self.root.after(150, _end_resize))
+            setattr(self, "_resize_debounce_job", self.root.after(200, _end_resize))
         except Exception:
             pass
 
@@ -307,14 +345,6 @@ class BuilderMixin:
             self.root.update_idletasks()
             w = self.root.winfo_width()
             h = self.root.winfo_height()
-            try:
-                import platform as _platform
-                if _platform.system() == "Linux":
-                    screen_w = max(1, self.root.winfo_screenwidth())
-                    max_w = max(300, int(screen_w * 0.35))
-                    w = min(w, max_w)
-            except Exception:
-                pass
             self.root.minsize(w, h)
         except Exception:
             pass
@@ -324,22 +354,23 @@ class BuilderMixin:
             self.root.update_idletasks()
             req_w = self.root.winfo_reqwidth()
             req_h = self.root.winfo_reqheight()
-            # On Linux, avoid forcing geometry so users can resize manually; set minsize instead.
-            try:
-                import platform as _platform
-                if _platform.system() == "Linux":
-                    screen_w = max(1, self.root.winfo_screenwidth())
-                    max_w = max(300, int(screen_w * 0.35))
-                    req_w = min(req_w, max_w)
-                    self.root.minsize(req_w, req_h)
-                    return
-            except Exception:
-                pass
-            # On other platforms, only grow the window if needed; don't shrink below current size
+            # Only grow the window if needed; don't shrink below current size
             cur_w = max(1, self.root.winfo_width())
             cur_h = max(1, self.root.winfo_height())
             new_w = max(cur_w, req_w)
             new_h = max(cur_h, req_h)
+
+            # On Linux, set both geometry and minsize when not actively dragging
+            try:
+                import platform as _platform
+                if _platform.system() == "Linux":
+                    if not getattr(self, "_resizing_active", False):
+                        self.root.geometry(f"{new_w}x{new_h}")
+                    self.root.minsize(new_w, new_h)
+                    return
+            except Exception:
+                pass
+
             self.root.geometry(f"{new_w}x{new_h}")
         except Exception:
             pass
