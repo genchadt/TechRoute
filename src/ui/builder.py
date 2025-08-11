@@ -26,6 +26,11 @@ class BuilderMixin:
     def _on_canvas_configure(self: UIContext, event: tk.Event) -> None:
         canvas_width = event.width
         try:
+            # If actively resizing the window, defer canvas width updates until end
+            if getattr(self, "_resizing_active", False):
+                setattr(self, "_pending_canvas_width", canvas_width)
+                return
+
             last = getattr(self, "_last_canvas_width", None)
             if last == canvas_width:
                 return
@@ -93,6 +98,16 @@ class BuilderMixin:
             def _end_resize():
                 setattr(self, "_resizing_active", False)
                 setattr(self, "_resize_debounce_job", None)
+                # Apply any pending canvas width once after resizing ends
+                try:
+                    pending_w = getattr(self, "_pending_canvas_width", None)
+                    if pending_w is None:
+                        pending_w = self.status_canvas.winfo_width()
+                    self.status_canvas.itemconfig(self.status_frame_window, width=pending_w)
+                    setattr(self, "_last_canvas_width", pending_w)
+                    setattr(self, "_pending_canvas_width", None)
+                except Exception:
+                    pass
                 try:
                     self._schedule_status_canvas_height_update()
                 except Exception:
