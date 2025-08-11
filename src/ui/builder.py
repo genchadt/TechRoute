@@ -307,6 +307,14 @@ class BuilderMixin:
             self.root.update_idletasks()
             w = self.root.winfo_width()
             h = self.root.winfo_height()
+            try:
+                import platform as _platform
+                if _platform.system() == "Linux":
+                    screen_w = max(1, self.root.winfo_screenwidth())
+                    max_w = max(300, int(screen_w * 0.35))
+                    w = min(w, max_w)
+            except Exception:
+                pass
             self.root.minsize(w, h)
         except Exception:
             pass
@@ -316,7 +324,23 @@ class BuilderMixin:
             self.root.update_idletasks()
             req_w = self.root.winfo_reqwidth()
             req_h = self.root.winfo_reqheight()
-            self.root.geometry(f"{req_w}x{req_h}")
+            # On Linux, avoid forcing geometry so users can resize manually; set minsize instead.
+            try:
+                import platform as _platform
+                if _platform.system() == "Linux":
+                    screen_w = max(1, self.root.winfo_screenwidth())
+                    max_w = max(300, int(screen_w * 0.35))
+                    req_w = min(req_w, max_w)
+                    self.root.minsize(req_w, req_h)
+                    return
+            except Exception:
+                pass
+            # On other platforms, only grow the window if needed; don't shrink below current size
+            cur_w = max(1, self.root.winfo_width())
+            cur_h = max(1, self.root.winfo_height())
+            new_w = max(cur_w, req_w)
+            new_h = max(cur_h, req_h)
+            self.root.geometry(f"{new_w}x{new_h}")
         except Exception:
             pass
 

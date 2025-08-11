@@ -58,24 +58,46 @@ def main():
     """Main function to start the application."""
     # Ensure proper Windows taskbar icon/grouping before any windows are created
     _set_windows_appusermodelid()
-
+    
+    proceed = messagebox.askyesno(
+        "Security Warning",
+        "This application will open a web browser with DISABLED security features.\n\n"
+        "Do NOT use this browser for normal web browsing!\n\n"
+        "Do you want to continue?",
+        icon="warning",
+    )
+    if not proceed:
+        return
+    
     try:
         root = tk.Tk()
         # Hide the main window while showing the initial warning dialog
         root.withdraw()
         _apply_default_icons(root)
 
-        proceed = messagebox.askyesno(
-            "Security Warning",
-            "This application will open a web browser with DISABLED security features.\n\n"
-            "Do NOT use this browser for normal web browsing!\n\n"
-            "Do you want to continue?",
-            icon="warning",
-            parent=root,
-        )
-        if not proceed:
-            root.destroy()
-            return
+        # On Linux, constrain window resizing behavior to meet UX requirements:
+        # - Allow manual resizing with a minimum size set later by the app
+        # - Cap the maximum size to 35% of screen width and full screen height
+        try:
+            if platform.system() == "Linux":
+                screen_w = max(1, root.winfo_screenwidth())
+                screen_h = max(1, root.winfo_screenheight())
+                max_w = max(300, int(screen_w * 0.35))
+                max_h = screen_h  # Full available height
+                root.maxsize(max_w, max_h)
+                # Ensure the window is user-resizable
+                root.resizable(True, True)
+            elif platform.system() == "Windows":
+                # Ensure Windows can reach full screen height/width when maximized
+                screen_w = max(1, root.winfo_screenwidth())
+                screen_h = max(1, root.winfo_screenheight())
+                root.maxsize(screen_w, screen_h)
+                root.resizable(True, True)
+        except Exception:
+            # Best-effort: if querying screen size fails, proceed without hard caps
+            pass
+
+
 
         # Show the main window and start the app
         root.deiconify()

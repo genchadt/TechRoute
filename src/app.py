@@ -90,7 +90,15 @@ class TechRouteApp:
             self.root.update_idletasks()
             req_w = self.root.winfo_reqwidth()
             req_h = self.root.winfo_reqheight()
-            self.root.minsize(req_w, req_h)
+            # Respect Linux max size policy from __main__.py: clamp min width if needed
+            try:
+                if platform.system() == "Linux":
+                    screen_w = max(1, self.root.winfo_screenwidth())
+                    max_w = max(300, int(screen_w * 0.35))
+                    req_w = min(req_w, max_w)
+                self.root.minsize(req_w, req_h)
+            except Exception:
+                self.root.minsize(req_w, req_h)
         try:
             self.root.after(0, _apply)
         except tk.TclError:
