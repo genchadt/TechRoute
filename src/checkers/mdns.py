@@ -4,6 +4,7 @@ from typing import Optional, Iterable, Any, cast
 import platform
 import struct
 import socket
+import threading
 
 from .base import BaseChecker, CheckResult
 
@@ -25,18 +26,23 @@ except ImportError:
         def __init__(self) -> None:
             pass
 
+# Optional: use Avahi via D-Bus when available (Linux)
+try:
+    import dbus  # type: ignore
+except Exception:
+    dbus = None  # type: ignore
+
 
 class _AnyServiceListener(ServiceListener):
-    def __init__(self) -> None:
+    def __init__(self, event: threading.Event) -> None:
         super().__init__()
-        self.seen = False
+        self._event = event
 
     def add_service(self, *args, **kwargs) -> None:  # pragma: no cover - callbacks
-        # Accept both positional and keyword styles from zeroconf
-        self.seen = True
+        self._event.set()
 
     def update_service(self, *args, **kwargs) -> None:  # pragma: no cover - callbacks
-        self.seen = True
+        self._event.set()
 
     def remove_service(self, *args, **kwargs) -> None:  # pragma: no cover - callbacks
         pass
@@ -48,46 +54,67 @@ class MDNSChecker(BaseChecker):
     name = "mDNS"
     port = 5353
 
+    def _avahi_dbus_check(self) -> CheckResult | None:
+        """Lightweight Avahi health check via D-Bus on Linux, if dbus-python is installed."""
+        if dbus is None or platform.system().lower() != "linux":
+            return None
+        try:
+            bus = dbus.SystemBus()
+            server_obj = bus.get_object("org.freedesktop.Avahi", "/")
+            server = dbus.Interface(server_obj, "org.freedesktop.Avahi.Server")
+            # These calls succeed only if Avahi is reachable/running.
+            _ = server.GetVersionString()
+            state = int(server.GetState())
+            # Accept RUNNING(2) primarily; other non-failure states also indicate availability.
+            if state == 2:
+                return CheckResult(True, info={"method": "avahi-dbus", "state": state})
+            return CheckResult(True, info={"method": "avahi-dbus", "state": state})
+        except Exception as e:
+            return CheckResult(False, error=f"Avahi D-Bus: {e}")
+
     def check(self, host: str, timeout: float = 1.5) -> CheckResult:
-        if Zeroconf is None or ServiceBrowser is None:
-            return CheckResult(False, error="zeroconf not installed")
-        # Help static type checkers
-        assert Zeroconf is not None and ServiceBrowser is not None
-
         sys_is_linux = platform.system().lower() == "linux"
-        effective_timeout = max(timeout, 2.0) if sys_is_linux else timeout
+        # Give Linux a bit more breathing room for multicast callback delivery
+        effective_timeout = max(timeout, 3.0) if sys_is_linux else timeout
 
-        # Try zeroconf browse: IPv4 first, then IPv6 on Linux
-        browse_modes = ["v4"] + (["v6"] if sys_is_linux else [])
-        for mode in browse_modes:
-            try:
-                zc_kwargs: dict[str, Any] = {}
-                if IPVersion is not None:
-                    try:
-                        zc_kwargs["ip_version"] = IPVersion.V4Only if mode == "v4" else IPVersion.V6Only  # type: ignore[attr-defined]
-                    except Exception:
-                        pass
-                ZC = cast(Any, Zeroconf)
-                zc = ZC(**zc_kwargs)
+        # Primary: zeroconf browse on meta-service, IPv4 first then IPv6 on Linux
+        if Zeroconf is not None and ServiceBrowser is not None:
+            browse_modes = ["v4"] + (["v6"] if sys_is_linux else [])
+            for mode in browse_modes:
                 try:
-                    listener = _AnyServiceListener()
-                    SB = cast(Any, ServiceBrowser)
-                    SB(zc, "_services._dns-sd._udp.local.", handlers=[listener.add_service, listener.update_service])  # noqa: F841
-                    import time
-                    end = time.time() + effective_timeout
-                    while time.time() < end:
-                        if listener.seen:
-                            return CheckResult(True)
-                        time.sleep(0.05)
-                finally:
-                    try:
-                        zc.close()
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+                    zc_kwargs: dict[str, Any] = {}
+                    if IPVersion is not None:
+                        try:
+                            zc_kwargs["ip_version"] = IPVersion.V4Only if mode == "v4" else IPVersion.V6Only  # type: ignore[attr-defined]
+                        except Exception:
+                            pass
 
-        # Fallback A: QU PTR query asking for unicast reply
+                    event = threading.Event()
+                    listener = _AnyServiceListener(event)
+
+                    ZC = cast(Any, Zeroconf)
+                    zc = ZC(**zc_kwargs)
+                    try:
+                        SB = cast(Any, ServiceBrowser)
+                        # Prefer listener-style for broad compatibility across zeroconf versions
+                        SB(zc, "_services._dns-sd._udp.local.", listener)
+                        if event.wait(timeout=effective_timeout):
+                            return CheckResult(True, info={"method": "zeroconf", "ip_version": mode})
+                    finally:
+                        try:
+                            zc.close()
+                        except Exception:
+                            pass
+                except Exception:
+                    # Try next mode or fallback
+                    pass
+
+        # Linux-only: if Avahi is up via D-Bus, consider mDNS reachable
+        avahi_res = self._avahi_dbus_check()
+        if avahi_res is not None and avahi_res.available:
+            return avahi_res
+
+        # Fallback A: QU PTR query asking for unicast reply (all OS)
         try:
             from .base import udp_send_receive
 
@@ -123,7 +150,7 @@ class MDNSChecker(BaseChecker):
         except Exception as e:
             return CheckResult(False, error=str(e))
 
-        # Fallback B (Linux): join multicast and listen briefly
+        # Linux-only multicast listen fallback retained as last resort
         if sys_is_linux:
             def _multicast_query() -> bytes:
                 header = struct.pack(">HHHHHH", 0, 0x0000, 1, 0, 0, 0)
