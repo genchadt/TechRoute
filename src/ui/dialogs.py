@@ -31,14 +31,41 @@ class DialogsMixin:
         dialog.transient(self.root)
         dialog.grab_set()
 
+
         ttk.Label(dialog, text="Default ports to check (one per line):").pack(pady=5, padx=10, anchor='w')
+
+        # --- Quick-add row for LPD and RAW ---
+        quick_add_frame = ttk.Frame(dialog)
+        quick_add_frame.pack(pady=(0, 2), padx=10, anchor='w')
+
+        def add_port_if_missing(port: int):
+            # Get all lines, but do not strip trailing whitespace from the text area
+            content = port_text.get("1.0", tk.END)
+            lines = [l.rstrip() for l in content.splitlines()]
+            ports = set(l for l in lines if l)
+            if str(port) not in ports:
+                # Remove any trailing empty lines
+                while lines and not lines[-1]:
+                    lines.pop()
+                # Rebuild the text area with no trailing blanks
+                port_text.delete("1.0", tk.END)
+                port_text.insert("1.0", "\n".join(lines) + ("\n" if lines else ""))
+                # Now add the new port
+                if lines:
+                    port_text.insert(tk.END, str(port) + "\n")
+                else:
+                    port_text.insert("1.0", str(port) + "\n")
+                port_text.see(tk.END)
+
+        ttk.Button(quick_add_frame, text="Add LPD (515)", command=lambda: add_port_if_missing(515)).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(quick_add_frame, text="Add RAW (9100)", command=lambda: add_port_if_missing(9100)).pack(side=tk.LEFT)
 
         text_frame = ttk.Frame(dialog)
         text_frame.pack(pady=5, padx=10, fill=tk.BOTH, expand=True)
-        
+
         port_text = tk.Text(text_frame, width=20, height=8)
         port_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
+
         scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=port_text.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         port_text.config(yscrollcommand=scrollbar.set)
