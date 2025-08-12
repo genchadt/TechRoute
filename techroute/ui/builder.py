@@ -201,7 +201,7 @@ class BuilderMixin:
         # Targets Input Group
         self.input_frame = ttk.LabelFrame(self.main_frame, text=f"Target Browser: {browser_name}", padding="10")
         self.input_frame.grid(row=2, column=0, sticky="ew")
-        ttk.Label(self.input_frame, text="Enter IPs or Hostnames, one per line", underline=6).pack(pady=5)
+        ttk.Label(self.input_frame, text="Enter IPs or Hostnames, one per line").pack(pady=5)
 
         quick_row = ttk.Frame(self.input_frame)
         quick_row.pack(pady=(0, 5), fill=tk.X)
