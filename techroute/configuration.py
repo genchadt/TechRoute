@@ -24,6 +24,10 @@ DEFAULT_CONFIG = {
     'window_settings': {
         'width_percentage': 110,
     },
+    'animation_settings': {
+        'total_duration_ms': 1200,
+        'frame_delay_ms': 100,
+    },
     # Users can edit, reorder, or remove browsers from the generated yaml.
     'browser_preferences': [
         {

@@ -76,8 +76,10 @@ class AnimationsMixin(AppUIProtocol):
         ]
         num_frames = len(frames)
         
-        # Ensure total animation duration is reasonable and tied to polling, but not excessively long
-        total_duration_ms = min(polling_rate_ms, 1200) if polling_rate_ms > 200 else 200
+        # Animation should complete slightly before the next ping cycle for smoothness.
+        # Total duration is the polling rate minus a 200ms buffer.
+        # We ensure a minimum duration to keep the animation visible on very fast polls.
+        total_duration_ms = max(50, polling_rate_ms - 200)
         frame_delay = max(1, int(total_duration_ms / num_frames))
 
         def update_frame(frame_index: int):

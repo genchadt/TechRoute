@@ -2,6 +2,7 @@
 Dialogs for the TechRoute UI.
 """
 from __future__ import annotations
+import os
 import platform
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -11,8 +12,42 @@ from .. import configuration
 from .types import AppUIProtocol
 
 class DialogsMixin(AppUIProtocol):
-    def _center_dialog(self, dialog: tk.Toplevel, width: int, height: int):
+    def _set_dialog_icon(self, dialog: tk.Toplevel):
+        """Sets the icon for a dialog window."""
+        try:
+            # Correctly determine the base directory relative to this file
+            # The script is in techroute/ui/, so we need to go up two levels
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            icon_path_ico = os.path.join(base_dir, "icon.ico")
+            icon_path_png = os.path.join(base_dir, "icon.png")
 
+            if platform.system() == "Windows":
+                if os.path.exists(icon_path_ico):
+                    dialog.iconbitmap(icon_path_ico)
+            elif os.path.exists(icon_path_png):
+                photo = tk.PhotoImage(file=icon_path_png)
+                dialog.iconphoto(False, photo)
+        except (tk.TclError, FileNotFoundError):
+            # If the icon fails to load, we don't want to crash the dialog.
+            # The main app will have already printed a warning.
+            pass
+    def _show_unsecure_browser_warning(self) -> bool:
+        """
+        Shows a warning about opening an unsecure browser instance.
+        Returns True if the user proceeds, False otherwise.
+        """
+        title = "Unsecure Browser Warning"
+        message = (
+            "You are about to open a web browser instance directly from this application. "
+            "This browser instance is intended for accessing device configuration pages and "
+            "is NOT a secure, fully-featured browser.\n\n"
+            "Please DO NOT use it for general web browsing, logging into accounts, "
+            "or handling sensitive data.\n\n"
+            "Do you want to continue?"
+        )
+        return messagebox.askokcancel(title, message, parent=self.root)
+
+    def _center_dialog(self, dialog: tk.Toplevel, width: int, height: int):
         """Centers the dialog on the main window."""
         # Ensure the main window's geometry is up-to-date
         self.root.update_idletasks()
@@ -33,6 +68,7 @@ class DialogsMixin(AppUIProtocol):
         if not self.controller:
             return
         dialog = tk.Toplevel(self.root)
+        self._set_dialog_icon(dialog)
         dialog.title("Default Ports")
         # Default size
         width, height = 300, 250
@@ -128,6 +164,7 @@ class DialogsMixin(AppUIProtocol):
         if not self.controller:
             return
         dialog = tk.Toplevel(self.root)
+        self._set_dialog_icon(dialog)
         dialog.title("Settings")
         
         width, height = 380, 240
@@ -190,6 +227,7 @@ class DialogsMixin(AppUIProtocol):
             return
         import webbrowser
         dialog = tk.Toplevel(self.root)
+        self._set_dialog_icon(dialog)
         dialog.title("UDP Services")
         width, height = 360, 300
         if platform.system() == "Linux":

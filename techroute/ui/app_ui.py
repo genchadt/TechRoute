@@ -5,6 +5,7 @@ Defines the AppUI class, composed from mixins, responsible for building
 and managing all Tkinter widgets for the main application window.
 """
 from __future__ import annotations
+import ipaddress
 import time
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -17,6 +18,7 @@ import tkinter.font as tkfont
 from .types import create_indicator_button
 from ..checkers import get_udp_service_registry
 from .status_view import StatusViewMixin
+from ..controller import PingState
 
 if TYPE_CHECKING:
     from ..controller import TechRouteController
@@ -310,7 +312,7 @@ class AppUI(
                         is_open = (svc_status == "Open")
                         btn.config(bg=("green" if is_open else "red"), fg="white")
 
-            elif not self.controller.is_pinging:
+            elif self.controller.state == PingState.IDLE:
                 port_widgets = widgets.get("port_widgets", {})
                 for port, widget in port_widgets.items():
                     widget.config(bg="gray", state=tk.DISABLED, cursor="", fg="white")
@@ -327,7 +329,7 @@ class AppUI(
         if not self.controller:
             return
 
-        if self.controller.is_pinging:
+        if self.controller.state != PingState.IDLE:
             self.controller.stop_ping_process()
             self.start_stop_button.config(text="Start Pinging", underline=0)
             self.launch_all_button.config(state=tk.DISABLED)
@@ -336,17 +338,17 @@ class AppUI(
         else:
             ip_string = self.ip_entry.get("1.0", tk.END).strip()
             if not ip_string:
-                messagebox.showwarning("Input Required", "Please enter at least one IP address or hostname.")
+                messagebox.showerror("Input Required", "Please enter at least one IP address or hostname.")
                 return
 
             try:
                 polling_rate_ms = int(self.polling_rate_entry.get())
             except ValueError:
-                messagebox.showwarning("Invalid Polling Rate", "Using default polling rate.")
-                polling_rate_ms = self.controller.get_polling_rate_ms() if self.controller else 1000
+                messagebox.showerror("Invalid Polling Rate", "Polling rate must be a number.")
+                return
 
             try:
-                targets = self.controller._parse_and_validate_targets(ip_string) if self.controller else []
+                targets = self.controller.parse_and_validate_targets(ip_string) if self.controller else []
                 if not targets:
                     return
 
@@ -364,7 +366,7 @@ class AppUI(
         if not self.controller:
             return
             
-        if self.controller.is_pinging:
+        if self.controller.state != PingState.IDLE:
             # The stop call will trigger a UI update via its callback
             self.controller.stop_ping_process()
             # Schedule a restart
@@ -400,20 +402,58 @@ class AppUI(
         self.ip_entry.delete("1.0", tk.END)
         self.update_status_bar("Input field cleared.")
 
+    def _extract_host_from_line(self, line: str) -> str:
+        """Extracts the host from a line, correctly handling IPv4, IPv6, and hostnames."""
+        s = line.strip()
+        # Case 1: IPv6 with ports, e.g., [fe80::1]:8080
+        if s.startswith('[') and ']' in s:
+            return s[1:s.find(']')]
+        
+        # Case 2: Raw IP address (v4 or v6) without ports
+        try:
+            ipaddress.ip_address(s)
+            return s
+        except ValueError:
+            pass  # Not a raw IP, proceed to next check
+
+        # Case 3: Hostname or IP with ports, e.g., example.com:80 or 192.168.1.1:80
+        # This is tricky for raw IPv6, which is why it's handled above.
+        # For IPv4 and hostnames, this is safe.
+        if ':' in s and '.' in s.split(':', 1)[0]: # Likely IPv4 or FQDN with port
+             return s.split(':', 1)[0]
+        elif ':' not in s: # No colon, must be a hostname
+            return s
+        
+        # If we're here, it could be a hostname with a colon (unlikely for this app's purpose)
+        # or an unbracketed IPv6 with a port. The controller would catch the invalid format,
+        # but for UI-side deduplication, we take the part before the first colon.
+        return s.split(':', 1)[0]
+
     def _append_unique_line_to_ip_entry(self, value: str):
-        """Appends a value as a new unique line to the IP entry."""
+        """
+        Appends a value as a new unique line to the IP entry, checking for host duplicates.
+        """
         if str(self.ip_entry.cget('state')) != str(tk.NORMAL):
             self.update_status_bar("Input disabled while pinging.")
             return
         
         content = self.ip_entry.get("1.0", "end-1c")
         lines = [l.strip() for l in content.splitlines() if l.strip()]
-        if value in lines:
-            self.update_status_bar(f"'{value}' already in list.")
-            return
+        
+        # The value to be added is always a clean host/IP, no need to extract.
+        # Normalize it for comparison.
+        normalized_value = '127.0.0.1' if value == 'localhost' else value
+        
+        for line in lines:
+            existing_host = self._extract_host_from_line(line)
+            normalized_existing = '127.0.0.1' if existing_host == 'localhost' else existing_host
+            
+            if normalized_value == normalized_existing:
+                self.update_status_bar(f"'{value}' is already in the list.")
+                return
         
         prefix = "\n" if content and not content.endswith("\n") else ""
-        self.ip_entry.insert("end-1c", prefix + value + "\n")
+        self.ip_entry.insert("end", prefix + value + "\n")
         self.ip_entry.see("end")
 
     def refresh_ui_for_settings_change(self) -> None:

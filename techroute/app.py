@@ -11,6 +11,10 @@ import os
 import platform
 import tkinter as tk
 from tkinter import messagebox
+try:
+    import ctypes
+except ImportError:
+    ctypes = None
 
 from .controller import TechRouteController
 from .ui.app_ui import AppUI
@@ -24,14 +28,21 @@ class MainApp:
         self.root.title("TechRoute - Machine Service Checker")
         self._set_icon()
 
+        # Force taskbar icon update on Windows
+        if platform.system() == "Windows":
+            self.root.withdraw()
+            self.root.after(10, self.root.deiconify)
+
         # The UI must be created first to provide callbacks to the controller
         self.ui = AppUI(root, self)
 
         # The controller is the heart of the application logic
         self.controller = TechRouteController(
+            ui=self.ui,
             on_status_update=self._handle_status_update,
             on_network_info_update=self._handle_network_info_update,
-            on_ping_start=self.ui.start_blinking_animation,
+            on_checking_start=self.ui.start_blinking_animation,
+            on_pinging_start=self.ui.stop_blinking_animation,
             on_ping_stop=self.ui.reset_status_indicator,
             on_ping_update=lambda: self.ui.run_ping_animation(self.controller.get_polling_rate_ms())
         )
@@ -46,15 +57,16 @@ class MainApp:
         """Sets the application icon based on the OS."""
         try:
             base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            icon_path_ico = os.path.join(base_dir, "icon.ico")
             icon_path_png = os.path.join(base_dir, "icon.png")
 
-            if os.path.exists(icon_path_png):
-                photo = tk.PhotoImage(file=icon_path_png)
-                self.root.iconphoto(False, photo)
-            elif platform.system() == "Windows":
-                icon_path_ico = os.path.join(base_dir, "icon.ico")
+            if platform.system() == "Windows":
                 if os.path.exists(icon_path_ico):
                     self.root.iconbitmap(icon_path_ico)
+            elif os.path.exists(icon_path_png):
+                # For other OSes like Linux
+                photo = tk.PhotoImage(file=icon_path_png)
+                self.root.iconphoto(False, photo)
         except (tk.TclError, FileNotFoundError) as e:
             print(f"Warning: Could not load application icon. {e}")
 
@@ -86,6 +98,18 @@ class MainApp:
 
 def main():
     """The main entry point for the application."""
+    # Set the AppUserModelID on Windows to ensure the custom icon is used on the taskbar.
+    # This must be done BEFORE the main window is created.
+    if platform.system() == "Windows":
+        if ctypes:
+            try:
+                from ctypes import windll
+                app_id = u'genchadt.techroute.1.0'  # Unique ID for the application
+                windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+            except (ImportError, AttributeError, OSError):
+                # This can fail on some minimal Windows environments.
+                print("Warning: Could not set AppUserModelID. Taskbar icon may not appear correctly.")
+
     root = tk.Tk()
     app = MainApp(root)
     root.mainloop()

@@ -8,18 +8,32 @@ import os
 import queue
 import threading
 import time
-from typing import Dict, Any, List, Optional, Tuple, Callable
+from enum import Enum, auto
+from typing import Dict, Any, List, Optional, Tuple, Callable, TYPE_CHECKING
 
 from . import configuration, network
+
+if TYPE_CHECKING:
+    from .ui.app_ui import AppUI
+
+
+class PingState(Enum):
+    """Represents the pinging state of the application."""
+    IDLE = auto()
+    CHECKING = auto()
+    PINGING = auto()
+
 
 class TechRouteController:
     """Manages application state, network operations, and configuration."""
 
     def __init__(
         self,
+        ui: AppUI,
         on_status_update: Callable,
         on_network_info_update: Callable,
-        on_ping_start: Callable,
+        on_checking_start: Callable,
+        on_pinging_start: Callable,
         on_ping_stop: Callable,
         on_ping_update: Callable,
     ):
@@ -27,23 +41,29 @@ class TechRouteController:
         Initializes the controller.
 
         Args:
+            ui: The main UI instance.
             on_status_update: Callback to send status updates to the UI.
             on_network_info_update: Callback to send network info to the UI.
-            on_ping_start: Callback to trigger UI changes when pinging starts.
+            on_checking_start: Callback for when the initial check begins.
+            on_pinging_start: Callback for when continuous pinging begins.
             on_ping_stop: Callback to trigger UI changes when pinging stops.
             on_ping_update: Callback to trigger UI animations on each ping cycle.
         """
+        self.ui = ui
         self.config = configuration.load_or_create_config()
         self._load_port_service_mappings()
 
         self.on_status_update = on_status_update
         self.on_network_info_update = on_network_info_update
-        self.on_ping_start = on_ping_start
+        self.on_checking_start = on_checking_start
+        self.on_pinging_start = on_pinging_start
         self.on_ping_stop = on_ping_stop
         self.on_ping_update = on_ping_update
 
         # --- State Variables ---
-        self.is_pinging = False
+        self.state = PingState.IDLE
+        self.initial_target_count = 0
+        self.initial_responses_received = 0
         self.ping_threads = []
         self.stop_event = threading.Event()
         self.update_queue = queue.Queue()
@@ -93,7 +113,7 @@ class TechRouteController:
         configuration.save_config(self.config)
 
     def toggle_ping_process(self, ip_string: str, polling_rate_ms: int):
-        if self.is_pinging:
+        if self.state != PingState.IDLE:
             self.stop_ping_process()
         else:
             self.start_ping_process(ip_string, polling_rate_ms)
@@ -106,7 +126,7 @@ class TechRouteController:
             return
 
         try:
-            targets = self._parse_and_validate_targets(ip_string)
+            targets = self.parse_and_validate_targets(ip_string)
         except ValueError as e:
             # Propagate error to be shown in the UI
             raise e
@@ -114,12 +134,14 @@ class TechRouteController:
         if not targets:
             return
 
-        self.is_pinging = True
+        self.state = PingState.CHECKING
+        self.initial_target_count = len(targets)
+        self.initial_responses_received = 0
         self.stop_event.clear()
         self.web_ui_targets.clear()
         self.ping_threads.clear()
         self.update_polling_rate_ms(polling_rate_ms)
-        self.on_ping_start()
+        self.on_checking_start()
 
         for target in targets:
             thread = threading.Thread(
@@ -132,9 +154,9 @@ class TechRouteController:
 
     def stop_ping_process(self):
         """Stops the active pinging process."""
-        if not self.is_pinging:
+        if self.state == PingState.IDLE:
             return
-        self.is_pinging = False
+        self.state = PingState.IDLE
         self.stop_event.set()
         self.on_ping_stop()
         # We don't join the threads here to avoid blocking the UI.
@@ -142,13 +164,19 @@ class TechRouteController:
 
     def process_queue(self):
         """Processes messages from the update queue to safely update the GUI."""
-        try:
-            # Check for new messages without blocking
-            if not self.update_queue.empty():
-                self.on_ping_update()
+        if self.state == PingState.PINGING and not self.update_queue.empty():
+            self.on_ping_update()
 
+        try:
             while True:
                 message = self.update_queue.get_nowait()
+
+                if self.state == PingState.CHECKING:
+                    self.initial_responses_received += 1
+                    if self.initial_responses_received >= self.initial_target_count:
+                        self.state = PingState.PINGING
+                        self.on_pinging_start()
+
                 self.on_status_update(message)
 
                 # Unpack for web UI logic
@@ -164,10 +192,13 @@ class TechRouteController:
             pass  # Expected when the queue is empty
 
     def launch_all_web_uis(self):
-        """Launches web UIs for all targets with open web ports."""
+        """Launches web UIs for all targets with open web ports after showing a warning."""
         if not self.web_ui_targets:
             return False
         
+        if not self.ui._show_unsecure_browser_warning():
+            return False
+
         for target_details in self.web_ui_targets.values():
             host_for_url = self._format_host_for_url(target_details['host'])
             url = f"{target_details['protocol']}://{host_for_url}"
@@ -175,35 +206,62 @@ class TechRouteController:
         return True
 
     def launch_single_web_ui(self, original_string: str):
-        """Launches the web UI for a single, specific target."""
+        """Launches the web UI for a single, specific target after showing a warning."""
         target_details = self.web_ui_targets.get(original_string)
-        if target_details:
-            host_for_url = self._format_host_for_url(target_details['host'])
-            protocol = target_details.get('protocol', 'http')
-            url = f"{protocol}://{host_for_url}"
-            network.open_browser_with_url(url, self.browser_command)
+        if not target_details:
+            return
+
+        if not self.ui._show_unsecure_browser_warning():
+            return
+            
+        host_for_url = self._format_host_for_url(target_details['host'])
+        protocol = target_details.get('protocol', 'http')
+        url = f"{protocol}://{host_for_url}"
+        network.open_browser_with_url(url, self.browser_command)
 
     def launch_web_ui_for_port(self, original_string: str, port: int):
-        """Launches a web UI for a specific IP and port."""
+        """Launches a web UI for a specific IP and port after showing a warning."""
+        if not self.ui._show_unsecure_browser_warning():
+            return
+
         host = self._extract_host(original_string)
         protocol = "https" if port != 80 else "http"
         host_for_url = self._format_host_for_url(host)
         url = f"{protocol}://{host_for_url}:{port}"
         network.open_browser_with_url(url, self.browser_command)
 
-    def _parse_and_validate_targets(self, ip_string: str) -> List[Dict[str, Any]]:
+    def parse_and_validate_targets(self, ip_string: str) -> List[Dict[str, Any]]:
         """
-        Parses a string of IPs/hostnames and ports, validating each.
+        Parses a string of IPs/hostnames and ports, validating each and removing duplicates.
         """
         targets = []
+        processed_hosts = set()
         lines = [line.strip() for line in ip_string.splitlines() if line.strip()]
         
         for line in lines:
             host, ports_list = self._parse_target_line(line)
+            
+            # Normalize host to avoid trivial duplicates like 'localhost' vs '127.0.0.1'
+            # This is a simple check; more complex normalization could be done if needed.
+            normalized_host = '127.0.0.1' if host == 'localhost' else host
+            
+            if normalized_host in processed_hosts:
+                continue
+
             self._validate_host(host)
             default_ports = self.config.get('default_ports_to_check', [])
-            target: Dict[str, Any] = {'ip': host, 'ports': sorted(list(set(ports_list + default_ports))), 'original_string': line}
+            
+            # Combine and deduplicate ports
+            all_ports = sorted(list(set(ports_list + default_ports)))
+            
+            target: Dict[str, Any] = {
+                'ip': host, 
+                'ports': all_ports, 
+                'original_string': line
+            }
             targets.append(target)
+            processed_hosts.add(normalized_host)
+            
         return targets
 
     def _parse_target_line(self, line: str) -> Tuple[str, List[int]]:

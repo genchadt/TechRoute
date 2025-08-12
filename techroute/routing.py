@@ -16,10 +16,11 @@ def _get_windows_gateway() -> Optional[str]:
     """
     Uses PowerShell to get the default gateway for the active network connection on Windows.
     This is more reliable than parsing `ipconfig` as it is not dependent on string localization.
+    It now explicitly selects the first available gateway to handle multi-homed systems.
     """
     try:
-        # This command gets the network configuration for the active connection and selects the IPv4 default gateway.
-        command = "powershell -Command \"(Get-NetIPConfiguration | Where-Object { $_.NetAdapter.Status -eq 'Up' -and $_.IPv4DefaultGateway -ne $null }).IPv4DefaultGateway.NextHop\""
+        # Command updated to select the first valid gateway from potentially multiple active adapters.
+        command = "powershell -Command \"(Get-NetIPConfiguration | Where-Object { $_.NetAdapter.Status -eq 'Up' -and $_.IPv4DefaultGateway -ne $null } | Select-Object -First 1).IPv4DefaultGateway.NextHop\""
         
         # Using CREATE_NO_WINDOW flag to prevent a console window from flashing.
         si = subprocess.STARTUPINFO()
@@ -28,12 +29,14 @@ def _get_windows_gateway() -> Optional[str]:
 
         output = subprocess.check_output(command, text=True, stderr=subprocess.PIPE, startupinfo=si)
         
-        gateway = output.strip()
-        if gateway and gateway != "0.0.0.0":
-            return gateway
+        # The command might still return multiple lines if something is unusual. Take the first one.
+        first_line = output.strip().splitlines()[0] if output.strip() else None
+        
+        if first_line and first_line != "0.0.0.0":
+            return first_line
             
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        # Fallback or error logging can be placed here
+    except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
+        # IndexError is caught in case output is empty.
         return None
     return None
 
