@@ -45,10 +45,9 @@ class UIContext(Protocol):
     netinfo_gw: ttk.Label
     netinfo_mask: ttk.Label
 
-    # Local services indicators
-    local_http_indicator: tk.Button
-    local_https_indicator: tk.Button
-    local_rdp_indicator: tk.Button
+    # Local services indicators (by port number)
+    local_service_indicators: Dict[int, tk.Button]
+    _local_service_ports: List[int]
 
     # Inputs and buttons
     polling_rate_entry: ttk.Entry

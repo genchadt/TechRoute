@@ -187,16 +187,33 @@ class BuilderMixin:
         self.netinfo_mask = ttk.Label(netgrid, text="Detecting…")
         self.netinfo_mask.grid(row=1, column=3, sticky="w", padx=(6, 0), pady=(4, 0))
 
-        # Local services indicators (placeholders)
+        # Local services indicators (use identical indicator buttons as in status rows)
         ttk.Label(netgrid, text="Local Services:").grid(row=2, column=0, sticky="w", pady=(4, 0))
         local_services_frame = ttk.Frame(netgrid)
         local_services_frame.grid(row=2, column=1, columnspan=3, sticky="w", padx=(6, 0), pady=(4, 0))
-        self.local_http_indicator = tk.Button(local_services_frame, text="HTTP (80)", state=tk.DISABLED, relief="flat", disabledforeground="gray", padx=2, pady=1)
-        self.local_http_indicator.pack(side=tk.LEFT, padx=(0, 4))
-        self.local_https_indicator = tk.Button(local_services_frame, text="HTTPS (443)", state=tk.DISABLED, relief="flat", disabledforeground="gray", padx=2, pady=1)
-        self.local_https_indicator.pack(side=tk.LEFT, padx=(0, 4))
-        self.local_rdp_indicator = tk.Button(local_services_frame, text="RDP (3389)", state=tk.DISABLED, relief="flat", disabledforeground="gray", padx=2, pady=1)
-        self.local_rdp_indicator.pack(side=tk.LEFT, padx=(0, 4))
+        # Ports to check on localhost
+        self._local_service_ports = [20, 21, 22, 139, 445]
+        self.local_service_indicators = {}
+        for p in self._local_service_ports:
+            btn = tk.Button(
+                local_services_frame,
+                text=f"{p}",
+                bg="gray",
+                fg="white",
+                disabledforeground="white",
+                relief="raised",
+                borderwidth=1,
+                state=tk.DISABLED,
+                padx=4,
+                pady=1,
+            )
+            btn.pack(side=tk.LEFT, padx=(0, 4))
+            self.local_service_indicators[p] = btn
+        # Start a background update after network info loads
+        try:
+            self.root.after(100, getattr(self, "_start_local_services_check"))
+        except Exception:
+            pass
 
         # Targets Input Group
         self.input_frame = ttk.LabelFrame(self.main_frame, text=f"Target Browser: {browser_name}", padding="10")
@@ -427,3 +444,62 @@ class BuilderMixin:
             self.netinfo_mask.config(text=str(mask))
         except Exception:
             pass
+
+    # --- Local Services (localhost) checker ---
+    def _start_local_services_check(self: UIContext) -> None:
+        """Kick off an asynchronous check of local TCP ports and schedule periodic refreshes."""
+        try:
+            import threading
+            if getattr(self, "_local_services_thread_running", False):
+                return
+            setattr(self, "_local_services_thread_running", True)
+
+            def _worker():
+                try:
+                    from .. import network as _net
+                    ports = getattr(self, "_local_service_ports", [20, 21, 22, 139, 445])
+                    timeout = 0.5
+                    results: Dict[int, str] = {}
+                    # Check both IPv4 and IPv6 loopback; consider Open if either responds
+                    host_v4 = "127.0.0.1"
+                    host_v6 = "::1"
+                    for p in ports:
+                        try:
+                            status_v4 = _net.check_tcp_port(host_v4, p, timeout)
+                        except Exception:
+                            status_v4 = "Closed"
+                        try:
+                            status_v6 = _net.check_tcp_port(host_v6, p, timeout)
+                        except Exception:
+                            status_v6 = "Closed"
+                        results[p] = ("Open" if (status_v4 == "Open" or status_v6 == "Open") else "Closed")
+
+                    def _apply():
+                        try:
+                            for p, status in results.items():
+                                btn = self.local_service_indicators.get(p)
+                                if not btn:
+                                    continue
+                                is_open = (status == "Open")
+                                btn.config(bg=("green" if is_open else "red"), fg="white")
+                        except Exception:
+                            pass
+                    try:
+                        self.root.after(0, _apply)
+                    except Exception:
+                        pass
+                finally:
+                    setattr(self, "_local_services_thread_running", False)
+                    # Schedule next refresh in background (every ~5 seconds)
+                    try:
+                        self.root.after(5000, getattr(self, "_start_local_services_check"))
+                    except Exception:
+                        pass
+
+            threading.Thread(target=_worker, daemon=True).start()
+        except Exception:
+            # If anything goes wrong, try again later quietly
+            try:
+                self.root.after(5000, getattr(self, "_start_local_services_check"))
+            except Exception:
+                pass

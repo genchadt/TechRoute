@@ -23,9 +23,7 @@ class AppUI(MenuMixin, DialogsMixin, AnimationsMixin, BuilderMixin, StatusViewMi
     """Manages the user interface of the TechRoute application."""
     clear_statuses_button: Optional[ttk.Button]
     # Local service indicators (created in BuilderMixin._setup_ui)
-    local_http_indicator: tk.Button
-    local_https_indicator: tk.Button
-    local_rdp_indicator: tk.Button
+    local_service_indicators: Dict[int, tk.Button]
 
     def __init__(self, root: tk.Tk, app_controller: 'TechRouteApp', browser_name: str):
         """Initializes the UI."""

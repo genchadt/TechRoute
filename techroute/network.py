@@ -473,6 +473,13 @@ def _check_port(host: str, port: int, timeout: float) -> str:
             continue
     return "Closed"
 
+def check_tcp_port(host: str, port: int, timeout: float) -> str:
+    """Public helper to check a TCP port.
+
+    Returns one of: "Open", "Closed", or "Hostname Error".
+    """
+    return _check_port(host, port, timeout)
+
 def ping_worker(
     target: Dict[str, Any], 
     stop_event: threading.Event, 
