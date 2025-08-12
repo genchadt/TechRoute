@@ -6,19 +6,13 @@ import platform
 import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import TYPE_CHECKING
-from .types import UIContext
 
 from .. import configuration
+from .types import AppUIProtocol
 
-if TYPE_CHECKING:
-    from ..app import TechRouteApp
-
-
-class DialogsMixin:
-    root: tk.Tk
-    app_controller: "TechRouteApp"
-
+class DialogsMixin(AppUIProtocol):
     def _center_dialog(self, dialog: tk.Toplevel, width: int, height: int):
+
         """Centers the dialog on the main window."""
         # Ensure the main window's geometry is up-to-date
         self.root.update_idletasks()
@@ -34,8 +28,10 @@ class DialogsMixin:
         
         dialog.geometry(f"{width}x{height}+{x}+{y}")
 
-    def _open_ports_dialog(self: UIContext):
+    def _open_ports_dialog(self):
         """Opens a dialog to edit the default ports."""
+        if not self.controller:
+            return
         dialog = tk.Toplevel(self.root)
         dialog.title("Default Ports")
         # Default size
@@ -86,8 +82,9 @@ class DialogsMixin:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         port_text.config(yscrollcommand=scrollbar.set)
 
-        current_ports = self.app_controller.config.get('default_ports_to_check', [])
-        port_text.insert(tk.END, "\n".join(map(str, current_ports)))
+        if self.controller:
+            current_ports = self.controller.config.get('default_ports_to_check', [])
+            port_text.insert(tk.END, "\n".join(map(str, current_ports)))
 
         button_frame = ttk.Frame(dialog)
         button_frame.pack(pady=10)
@@ -105,16 +102,19 @@ class DialogsMixin:
                     messagebox.showerror("Invalid Ports", "Please enter valid port numbers (1-65535), one per line.", parent=dialog)
                     return
             
-            new_config = self.app_controller.config.copy()
-            new_config['default_ports_to_check'] = sorted(list(set(new_ports)))
-            self.app_controller.update_config(new_config)
+            if self.controller:
+                new_config = self.controller.config.copy()
+                new_config['default_ports_to_check'] = sorted(list(set(new_ports)))
+                self.controller.update_config(new_config)
             dialog.destroy()
 
         def reset_to_default():
+            if not self.controller:
+                return
             default_ports = configuration.DEFAULT_CONFIG.get('default_ports_to_check', [])
-            new_config = self.app_controller.config.copy()
+            new_config = self.controller.config.copy()
             new_config['default_ports_to_check'] = sorted(list(set(default_ports)))
-            self.app_controller.update_config(new_config)
+            self.controller.update_config(new_config)
             dialog.destroy()
 
         ttk.Button(button_frame, text="Save", command=save_ports).pack(side=tk.LEFT, padx=5)
@@ -123,8 +123,10 @@ class DialogsMixin:
 
         self.root.wait_window(dialog)
 
-    def _open_settings_dialog(self: UIContext):
+    def _open_settings_dialog(self):
         """Opens the Settings dialog (form only)."""
+        if not self.controller:
+            return
         dialog = tk.Toplevel(self.root)
         dialog.title("Settings")
         
@@ -142,7 +144,7 @@ class DialogsMixin:
         # Theme
         ttk.Label(content, text="Theme:").grid(row=0, column=0, sticky='w', pady=(0, 8))
         theme_values = ["System", "Light", "Dark"]
-        theme_var = tk.StringVar(value=self.app_controller.config.get('ui_theme', 'System'))
+        theme_var = tk.StringVar(value=self.controller.config.get('ui_theme', 'System') if self.controller else 'System')
         theme_combo = ttk.Combobox(content, textvariable=theme_var, values=theme_values, state='readonly', width=20)
         theme_combo.grid(row=0, column=1, sticky='w', pady=(0, 8), padx=(8, 0))
 
@@ -150,7 +152,7 @@ class DialogsMixin:
         readability_frame = ttk.LabelFrame(content, text="TCP Port Readability", padding=5)
         readability_frame.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(8, 0))
 
-        port_readability_var = tk.StringVar(value=self.app_controller.config.get('tcp_port_readability', 'Numbers'))
+        port_readability_var = tk.StringVar(value=self.controller.config.get('tcp_port_readability', 'Numbers') if self.controller else 'Numbers')
 
         simple_radio = ttk.Radiobutton(readability_frame, text="Simple (e.g., HTTP, FTP)", variable=port_readability_var, value="Simple")
         simple_radio.pack(anchor='w', padx=5, pady=(2, 0))
@@ -163,13 +165,15 @@ class DialogsMixin:
         btns.grid(row=2, column=0, columnspan=2, pady=(10, 0))
 
         def save_settings():
-            new_config = self.app_controller.config.copy()
+            if not self.controller:
+                return
+            new_config = self.controller.config.copy()
             new_config['ui_theme'] = theme_var.get()
             new_config['tcp_port_readability'] = port_readability_var.get()
-            self.app_controller.update_config(new_config)
+            self.controller.update_config(new_config)
             
             # Trigger a UI refresh to apply settings live
-            self.app_controller.ui.refresh_ui_for_settings_change()
+            self.refresh_ui_for_settings_change()
             
             dialog.destroy()
 
@@ -180,8 +184,10 @@ class DialogsMixin:
         content.columnconfigure(1, weight=1)
         self.root.wait_window(dialog)
 
-    def _open_udp_services_dialog(self: UIContext):
+    def _open_udp_services_dialog(self):
         """Opens a dialog to select UDP services to check (future feature)."""
+        if not self.controller:
+            return
         import webbrowser
         dialog = tk.Toplevel(self.root)
         dialog.title("UDP Services")
@@ -211,7 +217,7 @@ class DialogsMixin:
 
         # Build checkboxes
         vars_map: dict[int, tk.BooleanVar] = {}
-        selected_existing = set(self.app_controller.config.get('udp_services_to_check', []) or [])
+        selected_existing = set(self.controller.config.get('udp_services_to_check', []) or []) if self.controller else set()
         for idx, (port, name) in enumerate(services):
             var = tk.BooleanVar(value=(int(port) in selected_existing))
             vars_map[port] = var
@@ -255,11 +261,13 @@ class DialogsMixin:
         btns.pack(pady=(10, 0))
 
         def save_services():
+            if not self.controller:
+                return
             # Persist chosen UDP service ports into config under 'udp_services_to_check'
             selected_ports = sorted(int(p) for p, v in vars_map.items() if v.get())
-            new_config = self.app_controller.config.copy()
+            new_config = self.controller.config.copy()
             new_config['udp_services_to_check'] = selected_ports
-            self.app_controller.update_config(new_config)
+            self.controller.update_config(new_config)
             dialog.destroy()
 
         ttk.Button(btns, text="Save", command=save_services).pack(side=tk.LEFT, padx=5)

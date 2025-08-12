@@ -14,26 +14,26 @@ from typing import Optional, Tuple
 
 def _get_windows_gateway() -> Optional[str]:
     """
-    Parses 'ipconfig' output to find the default gateway on Windows.
+    Uses PowerShell to get the default gateway for the active network connection on Windows.
+    This is more reliable than parsing `ipconfig` as it is not dependent on string localization.
     """
     try:
-        output = subprocess.check_output(["ipconfig"], text=True, stderr=subprocess.PIPE)
-        # Regex to find the Default Gateway line, which may have a link-local IPv6
-        # gateway listed first. We prioritize the IPv4 gateway.
-        # The pattern looks for "Default Gateway" followed by lines of IPs.
-        gateway_pattern = re.compile(r"Default Gateway[.\s]*:\s*([^\s\n]+(?:\n\s+[^\s\n]+)*)")
+        # This command gets the network configuration for the active connection and selects the IPv4 default gateway.
+        command = "powershell -Command \"(Get-NetIPConfiguration | Where-Object { $_.NetAdapter.Status -eq 'Up' -and $_.IPv4DefaultGateway -ne $null }).IPv4DefaultGateway.NextHop\""
         
-        matches = gateway_pattern.findall(output)
+        # Using CREATE_NO_WINDOW flag to prevent a console window from flashing.
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        si.wShowWindow = subprocess.SW_HIDE
+
+        output = subprocess.check_output(command, text=True, stderr=subprocess.PIPE, startupinfo=si)
         
-        for match in matches:
-            # The match might contain multiple lines if both IPv6 and IPv4 gateways are present.
-            # We split by newline and strip whitespace to get individual IPs.
-            gateways = [gw.strip() for gw in match.strip().split('\n')]
-            for gw in gateways:
-                # A simple check for an IPv4 address format.
-                if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", gw):
-                    return gw
-    except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
+        gateway = output.strip()
+        if gateway and gateway != "0.0.0.0":
+            return gateway
+            
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Fallback or error logging can be placed here
         return None
     return None
 

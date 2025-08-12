@@ -3,13 +3,11 @@ Main menu construction for the TechRoute application UI.
 """
 from __future__ import annotations
 import tkinter as tk
-from .types import UIContext
+from typing import TYPE_CHECKING
+from .types import AppUIProtocol
 
-
-class MenuMixin:
-    root: tk.Tk
-
-    def _setup_menu(self: UIContext):
+class MenuMixin(AppUIProtocol):
+    def _setup_menu(self):
         """Creates the main application menu bar."""
         self.menu_bar = tk.Menu(self.root)
         self.root.config(menu=self.menu_bar)
