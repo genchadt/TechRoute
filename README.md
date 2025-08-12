@@ -44,7 +44,7 @@ This tool requires Python 3 and the following libraries:
 4. **Run the application**:
 
     ```bash
-    python -m src
+    python -m techroute
     ```
 
 5. **Configure (First Run)**: The first time you run the app, it will create a `config.yaml` file in the same directory. You can open this file in a text editor to change settings.
@@ -71,7 +71,7 @@ The project is organized into several files to separate concerns:
 
 ```plaintext
 TechRoute/
-├── src/
+├── techroute/
 │   ├── __main__.py         # Main script entry point
 │   ├── app.py              # Contains the Tkinter GUI class
 │   ├── configuration.py    # Manages loading config.yaml
@@ -92,10 +92,10 @@ TechRoute/
 
 ## UDP Service Checkers (Extending/Using)
 
-The `src/checkers` package provides a modular way to check for UDP-based services and device presence. Each checker exposes a simple API:
+The `techroute/checkers` package provides a modular way to check for UDP-based services and device presence. Each checker exposes a simple API:
 
 ```python
-from src.checkers import SLPChecker, MDNSChecker, WSDiscoveryChecker, SNMPChecker
+from techroute.checkers import SLPChecker, MDNSChecker, WSDiscoveryChecker, SNMPChecker
 
 result = SLPChecker().check("192.168.1.100")
 print(result.available, result.info, result.error)

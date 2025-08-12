@@ -187,6 +187,17 @@ class BuilderMixin:
         self.netinfo_mask = ttk.Label(netgrid, text="Detecting…")
         self.netinfo_mask.grid(row=1, column=3, sticky="w", padx=(6, 0), pady=(4, 0))
 
+        # Local services indicators (placeholders)
+        ttk.Label(netgrid, text="Local Services:").grid(row=2, column=0, sticky="w", pady=(4, 0))
+        local_services_frame = ttk.Frame(netgrid)
+        local_services_frame.grid(row=2, column=1, columnspan=3, sticky="w", padx=(6, 0), pady=(4, 0))
+        self.local_http_indicator = tk.Button(local_services_frame, text="HTTP (80)", state=tk.DISABLED, relief="flat", disabledforeground="gray", padx=2, pady=1)
+        self.local_http_indicator.pack(side=tk.LEFT, padx=(0, 4))
+        self.local_https_indicator = tk.Button(local_services_frame, text="HTTPS (443)", state=tk.DISABLED, relief="flat", disabledforeground="gray", padx=2, pady=1)
+        self.local_https_indicator.pack(side=tk.LEFT, padx=(0, 4))
+        self.local_rdp_indicator = tk.Button(local_services_frame, text="RDP (3389)", state=tk.DISABLED, relief="flat", disabledforeground="gray", padx=2, pady=1)
+        self.local_rdp_indicator.pack(side=tk.LEFT, padx=(0, 4))
+
         # Targets Input Group
         self.input_frame = ttk.LabelFrame(self.main_frame, text=f"Target Browser: {browser_name}", padding="10")
         self.input_frame.grid(row=2, column=0, sticky="ew")

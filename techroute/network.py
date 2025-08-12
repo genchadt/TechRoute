@@ -1,4 +1,4 @@
-# src/network.py
+# techroute/network.py
 
 """
 Network utilities for TechRoute.

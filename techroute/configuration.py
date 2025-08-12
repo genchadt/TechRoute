@@ -1,4 +1,4 @@
-# src/configuration.py
+# techroute/configuration.py
 
 """
 Configuration loader for TechRoute.

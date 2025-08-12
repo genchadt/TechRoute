@@ -1,4 +1,4 @@
-# src/app.py
+# techroute/app.py
 
 """
 Main application class for the TechRoute GUI.
