@@ -11,6 +11,7 @@ import os
 import platform
 import tkinter as tk
 from tkinter import messagebox
+from .localization import LocalizationManager
 try:
     import ctypes
 except ImportError:
@@ -25,7 +26,18 @@ class MainApp:
     def __init__(self, root: tk.Tk):
         """Initializes the application components."""
         self.root = root
-        self.root.title("TechRoute - Machine Service Checker")
+        
+        # The controller must be created before the UI to access config
+        self.controller = TechRouteController(
+            on_status_update=self._handle_status_update,
+            on_network_info_update=self._handle_network_info_update,
+        )
+
+        # Setup localization
+        self.localization_manager = LocalizationManager(self.controller.config.get('language'))
+        _ = self.localization_manager.translator
+        self.root.title(_("TechRoute - Machine Service Checker"))
+
         self._set_icon()
 
         # Force taskbar icon update on Windows
@@ -33,25 +45,27 @@ class MainApp:
             self.root.withdraw()
             self.root.after(10, self.root.deiconify)
 
-        # The UI must be created first to provide callbacks to the controller
-        self.ui = AppUI(root, self)
-
-        # The controller is the heart of the application logic
-        self.controller = TechRouteController(
-            ui=self.ui,
-            on_status_update=self._handle_status_update,
-            on_network_info_update=self._handle_network_info_update,
-            on_checking_start=self.ui.start_blinking_animation,
-            on_pinging_start=self.ui.stop_blinking_animation,
-            on_ping_stop=self.ui.reset_status_indicator,
-            on_ping_update=lambda: self.ui.run_ping_animation(self.controller.get_polling_rate_ms())
-        )
+        # The UI must be created with a translator
+        self.ui = AppUI(root, self, _)
         
-        # Now link the controller to the UI
+        # Now link the UI and controller
+        self.controller.set_ui(self.ui)
         self.ui.set_controller(self.controller)
+
+        # Set controller callbacks that might depend on the UI
+        self.controller.on_checking_start = self.ui.start_blinking_animation
+        self.controller.on_pinging_start = self.ui.stop_blinking_animation
+        self.controller.on_ping_stop = self.ui.reset_status_indicator
+        self.controller.on_ping_update = lambda: self.ui.run_ping_animation(self.controller.get_polling_rate_ms())
 
         # Start the periodic queue processing
         self._process_controller_queue()
+
+    def retranslate_ui(self):
+        """Retranslates the entire UI."""
+        _ = self.localization_manager.translator
+        self.root.title(_("TechRoute - Machine Service Checker"))
+        self.ui.retranslate_ui(_)
 
     def _set_icon(self):
         """Sets the application icon based on the OS."""

@@ -29,19 +29,17 @@ class TechRouteController:
 
     def __init__(
         self,
-        ui: AppUI,
         on_status_update: Callable,
         on_network_info_update: Callable,
-        on_checking_start: Callable,
-        on_pinging_start: Callable,
-        on_ping_stop: Callable,
-        on_ping_update: Callable,
+        on_checking_start: Optional[Callable] = None,
+        on_pinging_start: Optional[Callable] = None,
+        on_ping_stop: Optional[Callable] = None,
+        on_ping_update: Optional[Callable] = None,
     ):
         """
         Initializes the controller.
 
         Args:
-            ui: The main UI instance.
             on_status_update: Callback to send status updates to the UI.
             on_network_info_update: Callback to send network info to the UI.
             on_checking_start: Callback for when the initial check begins.
@@ -49,7 +47,7 @@ class TechRouteController:
             on_ping_stop: Callback to trigger UI changes when pinging stops.
             on_ping_update: Callback to trigger UI animations on each ping cycle.
         """
-        self.ui = ui
+        self.ui: Optional[AppUI] = None
         self.config = configuration.load_or_create_config()
         self._load_port_service_mappings()
 
@@ -73,6 +71,10 @@ class TechRouteController:
 
         # --- Background Initialization ---
         threading.Thread(target=self._background_fetch_network_info, daemon=True).start()
+
+    def set_ui(self, ui: AppUI):
+        """Links the UI to the controller after initialization."""
+        self.ui = ui
 
     def _load_port_service_mappings(self):
         """Loads port service mappings from the JSON file."""
@@ -141,7 +143,8 @@ class TechRouteController:
         self.web_ui_targets.clear()
         self.ping_threads.clear()
         self.update_polling_rate_ms(polling_rate_ms)
-        self.on_checking_start()
+        if self.on_checking_start:
+            self.on_checking_start()
 
         for target in targets:
             thread = threading.Thread(
@@ -158,14 +161,16 @@ class TechRouteController:
             return
         self.state = PingState.IDLE
         self.stop_event.set()
-        self.on_ping_stop()
+        if self.on_ping_stop:
+            self.on_ping_stop()
         # We don't join the threads here to avoid blocking the UI.
         # The daemon threads will exit. The stop_event ensures they stop work.
 
     def process_queue(self):
         """Processes messages from the update queue to safely update the GUI."""
         if self.state == PingState.PINGING and not self.update_queue.empty():
-            self.on_ping_update()
+            if self.on_ping_update:
+                self.on_ping_update()
 
         try:
             while True:
@@ -175,7 +180,8 @@ class TechRouteController:
                     self.initial_responses_received += 1
                     if self.initial_responses_received >= self.initial_target_count:
                         self.state = PingState.PINGING
-                        self.on_pinging_start()
+                        if self.on_pinging_start:
+                            self.on_pinging_start()
 
                 self.on_status_update(message)
 
@@ -196,7 +202,7 @@ class TechRouteController:
         if not self.web_ui_targets:
             return False
         
-        if not self.ui._show_unsecure_browser_warning():
+        if not self.ui or not self.ui._show_unsecure_browser_warning():
             return False
 
         for target_details in self.web_ui_targets.values():
@@ -211,7 +217,7 @@ class TechRouteController:
         if not target_details:
             return
 
-        if not self.ui._show_unsecure_browser_warning():
+        if not self.ui or not self.ui._show_unsecure_browser_warning():
             return
             
         host_for_url = self._format_host_for_url(target_details['host'])
@@ -221,7 +227,7 @@ class TechRouteController:
 
     def launch_web_ui_for_port(self, original_string: str, port: int):
         """Launches a web UI for a specific IP and port after showing a warning."""
-        if not self.ui._show_unsecure_browser_warning():
+        if not self.ui or not self.ui._show_unsecure_browser_warning():
             return
 
         host = self._extract_host(original_string)

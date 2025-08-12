@@ -23,6 +23,7 @@ from ..controller import PingState
 if TYPE_CHECKING:
     from ..controller import TechRouteController
     from ..app import MainApp
+    from typing import Callable
 
 
 class AppUI(
@@ -53,7 +54,7 @@ class AppUI(
     clear_statuses_button: Optional[ttk.Button]
     clear_field_button: Optional[ttk.Button]
 
-    def __init__(self, root: tk.Tk, main_app_instance: 'MainApp'):
+    def __init__(self, root: tk.Tk, main_app_instance: 'MainApp', translator: Callable[[str], str]):
         """Initializes the UI, waiting for the controller to be set."""
         super().__init__()
         self.root = root
@@ -65,9 +66,58 @@ class AppUI(
         self.clear_statuses_button = None
         self.clear_field_button = None
         self._last_animation_time = 0.0
+        self._ = translator
 
-        self._setup_menu()
+        self._setup_menu(translator)
         self._setup_ui_base()
+
+    def retranslate_ui(self, translator: Callable[[str], str]):
+        """Retranslates all the widgets in the UI."""
+        self._ = translator
+        self._setup_menu(translator)
+        self._build_language_menu()
+        self._setup_ui_base()
+        if self.controller:
+            self._setup_ui_controller_dependent()
+
+    def _build_language_menu(self):
+        """Builds the language selection menu."""
+        if not self.controller:
+            return
+        self.language_var = tk.StringVar(value=self.controller.config.get('language', 'System'))
+        
+        # Add "System Default" option
+        self.language_menu.add_radiobutton(
+            label=self._("System Default"),
+            variable=self.language_var,
+            value='System',
+            command=self._on_language_select
+        )
+        self.language_menu.add_separator()
+
+        # Add other available languages
+        if self.main_app and self.main_app.localization_manager:
+            for lang_code in self.main_app.localization_manager.available_languages:
+                self.language_menu.add_radiobutton(
+                    label=lang_code.upper(), # Replace with full name later
+                    variable=self.language_var,
+                    value=lang_code,
+                    command=self._on_language_select
+                )
+
+    def _on_language_select(self):
+        """Handles language change and triggers a UI refresh."""
+        new_lang = self.language_var.get()
+        if self.controller and self.main_app.localization_manager:
+            # Update config
+            self.controller.config['language'] = new_lang
+            self.controller.update_config(self.controller.config)
+            
+            # Update translator
+            self.main_app.localization_manager.set_language(new_lang)
+            
+            # Retranslate UI
+            self.main_app.retranslate_ui()
 
     def set_controller(self, controller: 'TechRouteController'):
         """Sets the controller and finalizes UI setup."""
@@ -80,7 +130,7 @@ class AppUI(
         # Status Bar
         self.status_bar_frame = ttk.Frame(self.root)
         self.status_bar_frame.pack(side=tk.BOTTOM, fill=tk.X)
-        self.status_bar_label = ttk.Label(self.status_bar_frame, text="Ready.", relief=tk.SUNKEN, anchor=tk.W, padding=(2, 5))
+        self.status_bar_label = ttk.Label(self.status_bar_frame, text=self._("Ready."), relief=tk.SUNKEN, anchor=tk.W, padding=(2, 5))
         self.status_bar_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         mono_font = tkfont.Font(family="Courier", size=10)
         self.status_indicator = ttk.Label(self.status_bar_frame, text="💻 ? ? ? ? ? 📠", relief=tk.SUNKEN, width=15, anchor=tk.CENTER, padding=(5, 5), font=mono_font)
@@ -98,26 +148,26 @@ class AppUI(
         self.controls_frame.columnconfigure(1, weight=1)
 
         # Network Information Group
-        self.network_frame = ttk.LabelFrame(self.main_frame, text="Network Information", padding="10")
+        self.network_frame = ttk.LabelFrame(self.main_frame, text=self._("Network Information"), padding="10")
         self.network_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         netgrid = self.network_frame
-        ttk.Label(netgrid, text="IPv4:").grid(row=0, column=0, sticky="w")
-        self.netinfo_v4 = ttk.Label(netgrid, text="Detecting…")
+        ttk.Label(netgrid, text=self._("IPv4:")).grid(row=0, column=0, sticky="w")
+        self.netinfo_v4 = ttk.Label(netgrid, text=self._("Detecting…"))
         self.netinfo_v4.grid(row=0, column=1, sticky="w", padx=(6, 0))
-        ttk.Label(netgrid, text="IPv6:").grid(row=0, column=2, sticky="w", padx=(16, 0))
-        self.netinfo_v6 = ttk.Label(netgrid, text="Detecting…")
+        ttk.Label(netgrid, text=self._("IPv6:")).grid(row=0, column=2, sticky="w", padx=(16, 0))
+        self.netinfo_v6 = ttk.Label(netgrid, text=self._("Detecting…"))
         self.netinfo_v6.grid(row=0, column=3, sticky="w", padx=(6, 0))
-        ttk.Label(netgrid, text="Gateway:").grid(row=1, column=0, sticky="w", pady=(4, 0))
-        self.netinfo_gw = ttk.Label(netgrid, text="Detecting…")
+        ttk.Label(netgrid, text=self._("Gateway:")).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        self.netinfo_gw = ttk.Label(netgrid, text=self._("Detecting…"))
         self.netinfo_gw.grid(row=1, column=1, sticky="w", padx=(6, 0), pady=(4, 0))
-        ttk.Label(netgrid, text="Subnet Mask:").grid(row=1, column=2, sticky="w", padx=(16, 0), pady=(4, 0))
-        self.netinfo_mask = ttk.Label(netgrid, text="Detecting…")
+        ttk.Label(netgrid, text=self._("Subnet Mask:")).grid(row=1, column=2, sticky="w", padx=(16, 0), pady=(4, 0))
+        self.netinfo_mask = ttk.Label(netgrid, text=self._("Detecting…"))
         self.netinfo_mask.grid(row=1, column=3, sticky="w", padx=(6, 0), pady=(4, 0))
 
         # Targets Input Group
-        self.input_frame = ttk.LabelFrame(self.main_frame, text="Target Browser: Unknown", padding="10")
+        self.input_frame = ttk.LabelFrame(self.main_frame, text=self._("Target Browser: Unknown"), padding="10")
         self.input_frame.grid(row=2, column=0, sticky="ew")
-        ttk.Label(self.input_frame, text="Enter IPs or Hostnames, one per line").pack(pady=5)
+        ttk.Label(self.input_frame, text=self._("Enter IPs or Hostnames, one per line")).pack(pady=5)
 
         # Input text area with scrollbars
         text_frame = ttk.Frame(self.input_frame)
@@ -134,7 +184,7 @@ class AppUI(
         self.status_container.grid(row=3, column=0, sticky="nsew", pady=(10, 0))
         self.status_canvas = tk.Canvas(self.status_container, borderwidth=0, highlightthickness=0)
         self.status_scrollbar = ttk.Scrollbar(self.status_container, orient="vertical", command=self.status_canvas.yview)
-        self.status_frame = ttk.LabelFrame(self.status_canvas, text="Status", padding="10")
+        self.status_frame = ttk.LabelFrame(self.status_canvas, text=self._("Status"), padding="10")
 
         self.status_frame_window = self.status_canvas.create_window((0, 0), window=self.status_frame, anchor="nw")
 
@@ -158,24 +208,24 @@ class AppUI(
         # Left controls
         left_controls_frame = ttk.Frame(self.controls_frame)
         left_controls_frame.grid(row=0, column=0, sticky="w")
-        ttk.Label(left_controls_frame, text="Polling Rate (ms):", underline=0).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(left_controls_frame, text=self._("Polling Rate (ms):"), underline=0).pack(side=tk.LEFT, padx=(0, 5))
         self.polling_rate_entry = ttk.Entry(left_controls_frame, width=5)
         self.polling_rate_entry.pack(side=tk.LEFT, padx=(0, 15))
         if self.controller:
             self.polling_rate_entry.insert(0, str(self.controller.get_polling_rate_ms()))
-        self.ports_button = ttk.Button(left_controls_frame, text="Ports...", underline=1, command=self._open_ports_dialog)
+        self.ports_button = ttk.Button(left_controls_frame, text=self._("Ports..."), underline=1, command=self._open_ports_dialog)
         self.ports_button.pack(side=tk.LEFT)
-        self.services_button = ttk.Button(left_controls_frame, text="UDP Services...", underline=0, command=self._open_udp_services_dialog)
+        self.services_button = ttk.Button(left_controls_frame, text=self._("UDP Services..."), underline=0, command=self._open_udp_services_dialog)
         self.services_button.pack(side=tk.LEFT, padx=(8, 0))
 
         # Right controls
         right_controls_frame = ttk.Frame(self.controls_frame)
         right_controls_frame.grid(row=0, column=2, sticky="e")
-        self.update_button = ttk.Button(right_controls_frame, text="Update", underline=0, command=self._update_ping_process)
+        self.update_button = ttk.Button(right_controls_frame, text=self._("Update"), underline=0, command=self._update_ping_process)
         self.update_button.pack()
 
         # Local services indicators
-        ttk.Label(self.network_frame, text="Local Services:").grid(row=2, column=0, sticky="w", pady=(4, 0))
+        ttk.Label(self.network_frame, text=self._("Local Services:")).grid(row=2, column=0, sticky="w", pady=(4, 0))
         local_services_frame = ttk.Frame(self.network_frame)
         local_services_frame.grid(row=2, column=1, columnspan=3, sticky="w", padx=(6, 0), pady=(4, 0))
         self._local_service_ports = [20, 21, 22, 445]
@@ -214,15 +264,15 @@ class AppUI(
         
         left_quick_frame = ttk.Frame(quick_row)
         left_quick_frame.pack(side=tk.LEFT)
-        ttk.Button(left_quick_frame, text="Add localhost", underline=0, command=self._add_localhost_to_input).pack(side=tk.LEFT)
-        ttk.Button(left_quick_frame, text="Add Gateway", underline=4, command=self._add_gateway_to_input).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(left_quick_frame, text=self._("Add localhost"), underline=0, command=self._add_localhost_to_input).pack(side=tk.LEFT)
+        ttk.Button(left_quick_frame, text=self._("Add Gateway"), underline=4, command=self._add_gateway_to_input).pack(side=tk.LEFT, padx=(5, 0))
 
         spacer = ttk.Frame(quick_row)
         spacer.pack(side=tk.LEFT, expand=True, fill=tk.X)
 
         right_quick_frame = ttk.Frame(quick_row)
         right_quick_frame.pack(side=tk.RIGHT)
-        self.clear_field_button = ttk.Button(right_quick_frame, text="Clear Field", underline=0, command=self._clear_input_field)
+        self.clear_field_button = ttk.Button(right_quick_frame, text=self._("Clear Field"), underline=0, command=self._clear_input_field)
         self.clear_field_button.pack()
 
         # Button Row
@@ -231,14 +281,14 @@ class AppUI(
 
         left_button_group = ttk.Frame(button_frame)
         left_button_group.pack(side=tk.LEFT)
-        self.start_stop_button = ttk.Button(left_button_group, text="Start Pinging", underline=0, command=self._toggle_ping_process)
+        self.start_stop_button = ttk.Button(left_button_group, text=self._("Start Pinging"), underline=0, command=self._toggle_ping_process)
         self.start_stop_button.pack(side=tk.LEFT)
-        self.launch_all_button = ttk.Button(left_button_group, text="Launch Web UIs", underline=0, command=lambda: self.controller.launch_all_web_uis() if self.controller else None, state=tk.DISABLED)
+        self.launch_all_button = ttk.Button(left_button_group, text=self._("Launch Web UIs"), underline=0, command=lambda: self.controller.launch_all_web_uis() if self.controller else None, state=tk.DISABLED)
         self.launch_all_button.pack(side=tk.LEFT, padx=(5, 0))
 
         right_button_group = ttk.Frame(button_frame)
         right_button_group.pack(side=tk.RIGHT)
-        clear_statuses_button = ttk.Button(right_button_group, text="Clear Statuses", underline=0, command=self._clear_statuses)
+        clear_statuses_button = ttk.Button(right_button_group, text=self._("Clear Statuses"), underline=0, command=self._clear_statuses)
         clear_statuses_button.pack()
         self.clear_statuses_button = clear_statuses_button
 
@@ -281,7 +331,7 @@ class AppUI(
             ip_part = original_string.split(':', 1)[0]
 
             ping_button = widgets["ping_button"]
-            ping_button.config(bg=color, text=latency_str if status == "Online" else "FAIL", fg="white")
+            ping_button.config(bg=color, text=latency_str if status == self._("Online") else self._("FAIL"), fg="white")
             
             is_launchable = web_port_open
             ping_button.config(state=tk.NORMAL if is_launchable else tk.DISABLED, 
@@ -331,20 +381,20 @@ class AppUI(
 
         if self.controller.state != PingState.IDLE:
             self.controller.stop_ping_process()
-            self.start_stop_button.config(text="Start Pinging", underline=0)
+            self.start_stop_button.config(text=self._("Start Pinging"), underline=0)
             self.launch_all_button.config(state=tk.DISABLED)
             self.ip_entry.config(state=tk.NORMAL)
-            self.update_status_bar("Pinging stopped.")
+            self.update_status_bar(self._("Pinging stopped."))
         else:
             ip_string = self.ip_entry.get("1.0", tk.END).strip()
             if not ip_string:
-                messagebox.showerror("Input Required", "Please enter at least one IP address or hostname.")
+                messagebox.showerror(self._("Input Required"), self._("Please enter at least one IP address or hostname."))
                 return
 
             try:
                 polling_rate_ms = int(self.polling_rate_entry.get())
             except ValueError:
-                messagebox.showerror("Invalid Polling Rate", "Polling rate must be a number.")
+                messagebox.showerror(self._("Invalid Polling Rate"), self._("Polling rate must be a number."))
                 return
 
             try:
@@ -354,12 +404,12 @@ class AppUI(
 
                 self.setup_status_display(targets)
                 self.controller.start_ping_process(ip_string, polling_rate_ms)
-                self.start_stop_button.config(text="Stop Pinging", underline=0)
+                self.start_stop_button.config(text=self._("Stop Pinging"), underline=0)
                 self.ip_entry.config(state=tk.DISABLED)
-                self.update_status_bar("Pinging targets...")
+                self.update_status_bar(self._("Pinging targets..."))
                 
             except ValueError as e:
-                messagebox.showerror("Invalid Target", str(e))
+                messagebox.showerror(self._("Invalid Target"), str(e))
 
     def _update_ping_process(self):
         """Stops and restarts the pinging process with current settings."""
@@ -381,7 +431,7 @@ class AppUI(
         self.setup_status_display([])
         self.controller.web_ui_targets.clear()
         self.launch_all_button.config(state=tk.DISABLED)
-        self.update_status_bar("Statuses cleared.")
+        self.update_status_bar(self._("Statuses cleared."))
 
     def _add_localhost_to_input(self):
         self._append_unique_line_to_ip_entry("127.0.0.1")
@@ -393,14 +443,14 @@ class AppUI(
         if gateway_ip:
             self._append_unique_line_to_ip_entry(gateway_ip)
         else:
-            self.update_status_bar("Gateway not detected.")
+            self.update_status_bar(self._("Gateway not detected."))
 
     def _clear_input_field(self):
         if str(self.ip_entry.cget('state')) != str(tk.NORMAL):
-            self.update_status_bar("Input disabled while pinging.")
+            self.update_status_bar(self._("Input disabled while pinging."))
             return
         self.ip_entry.delete("1.0", tk.END)
-        self.update_status_bar("Input field cleared.")
+        self.update_status_bar(self._("Input field cleared."))
 
     def _extract_host_from_line(self, line: str) -> str:
         """Extracts the host from a line, correctly handling IPv4, IPv6, and hostnames."""
@@ -434,7 +484,7 @@ class AppUI(
         Appends a value as a new unique line to the IP entry, checking for host duplicates.
         """
         if str(self.ip_entry.cget('state')) != str(tk.NORMAL):
-            self.update_status_bar("Input disabled while pinging.")
+            self.update_status_bar(self._("Input disabled while pinging."))
             return
         
         content = self.ip_entry.get("1.0", "end-1c")
@@ -449,7 +499,7 @@ class AppUI(
             normalized_existing = '127.0.0.1' if existing_host == 'localhost' else existing_host
             
             if normalized_value == normalized_existing:
-                self.update_status_bar(f"'{value}' is already in the list.")
+                self.update_status_bar(self._(f"'{value}' is already in the list."))
                 return
         
         prefix = "\n" if content and not content.endswith("\n") else ""

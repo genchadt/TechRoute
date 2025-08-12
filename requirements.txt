@@ -1,3 +1,5 @@
 psutil
 pysnmp
 zeroconf
+PyYAML==6.0.1
+Babel==2.12.1
