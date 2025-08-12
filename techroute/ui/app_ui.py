@@ -98,7 +98,7 @@ class AppUI(MenuMixin, DialogsMixin, AnimationsMixin, BuilderMixin, StatusViewMi
     def refresh_ui_for_settings_change(self) -> None:
         """Refreshes UI elements that depend on configuration settings."""
         # Update local service indicators
-        readability = self.app_controller.config.get('port_readability', 'Numbers')
+        readability = self.app_controller.config.get('tcp_port_readability', 'Numbers')
         service_map = self.app_controller.config.get('port_service_map', {})
         for port, button in self.local_service_indicators.items():
             display_text = str(port)

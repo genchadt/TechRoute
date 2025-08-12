@@ -147,10 +147,10 @@ class DialogsMixin:
         theme_combo.grid(row=0, column=1, sticky='w', pady=(0, 8), padx=(8, 0))
 
         # --- Port Readability Radio Buttons ---
-        readability_frame = ttk.LabelFrame(content, text="Port Readability", padding=5)
+        readability_frame = ttk.LabelFrame(content, text="TCP Port Readability", padding=5)
         readability_frame.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(8, 0))
 
-        port_readability_var = tk.StringVar(value=self.app_controller.config.get('port_readability', 'Numbers'))
+        port_readability_var = tk.StringVar(value=self.app_controller.config.get('tcp_port_readability', 'Numbers'))
 
         simple_radio = ttk.Radiobutton(readability_frame, text="Simple (e.g., HTTP, FTP)", variable=port_readability_var, value="Simple")
         simple_radio.pack(anchor='w', padx=5, pady=(2, 0))
@@ -165,7 +165,7 @@ class DialogsMixin:
         def save_settings():
             new_config = self.app_controller.config.copy()
             new_config['ui_theme'] = theme_var.get()
-            new_config['port_readability'] = port_readability_var.get()
+            new_config['tcp_port_readability'] = port_readability_var.get()
             self.app_controller.update_config(new_config)
             
             # Trigger a UI refresh to apply settings live

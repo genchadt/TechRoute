@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import font as tkfont
 from typing import Dict, Any
-from .types import UIContext
+from .types import UIContext, create_indicator_button
 from ..checkers import get_udp_service_registry
 
 
@@ -93,7 +93,7 @@ class BuilderMixin:
         self._local_service_ports = [20, 21, 22, 445]
         self.local_service_indicators = {}
         
-        readability = self.app_controller.config.get('port_readability', 'Numbers')
+        readability = self.app_controller.config.get('tcp_port_readability', 'Numbers')
         service_map = self.app_controller.config.get('port_service_map', {})
 
         for p in self._local_service_ports:
@@ -101,18 +101,7 @@ class BuilderMixin:
             if readability == 'Simple':
                 display_text = service_map.get(str(p), str(p))
 
-            btn = tk.Button(
-                local_services_frame,
-                text=display_text,
-                bg="gray",
-                fg="white",
-                disabledforeground="white",
-                relief="raised",
-                borderwidth=1,
-                state=tk.DISABLED,
-                padx=4,
-                pady=1,
-            )
+            btn = create_indicator_button(local_services_frame, display_text)
             btn.pack(side=tk.LEFT, padx=(0, 4))
             self.local_service_indicators[p] = btn
 
@@ -125,18 +114,7 @@ class BuilderMixin:
                 if not entry:
                     continue
                 service_name, _checker = entry
-                btn = tk.Button(
-                    local_services_frame,
-                    text=service_name,
-                    bg="gray",
-                    fg="white",
-                    disabledforeground="white",
-                    relief="raised",
-                    borderwidth=1,
-                    state=tk.DISABLED,
-                    padx=4,
-                    pady=1,
-                )
+                btn = create_indicator_button(local_services_frame, service_name)
                 btn.pack(side=tk.LEFT, padx=(0, 4))
                 self.local_service_indicators[udp_port] = btn
         # Start a background update after network info loads

@@ -5,7 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 from typing import Dict, Any, List, Optional, TYPE_CHECKING, cast
-from .types import UIContext
+from .types import UIContext, create_indicator_button
 from ..checkers import get_udp_service_registry
 
 if TYPE_CHECKING:
@@ -65,25 +65,14 @@ class StatusViewMixin:
 
             port_widgets = {}
             if ports:
-                readability = self.app_controller.config.get('port_readability', 'Numbers')
+                readability = self.app_controller.config.get('tcp_port_readability', 'Numbers')
                 service_map = self.app_controller.config.get('port_service_map', {})
                 for port in ports:
                     display_text = str(port)
                     if readability == 'Simple':
                         display_text = service_map.get(str(port), str(port))
                     # Create a button for each port. It will be enabled/disabled based on status.
-                    port_button = tk.Button(
-                        port_frame,
-                        text=display_text,
-                        bg="gray",
-                        fg="white",
-                        disabledforeground="white",
-                        relief="raised",
-                        borderwidth=1,
-                        state=tk.DISABLED,
-                        padx=4,
-                        pady=1,
-                    )
+                    port_button = create_indicator_button(port_frame, display_text)
                     port_button.pack(side=tk.LEFT, padx=2)
 
                     # Make relevant web ports (80, 443) clickable by assigning a command
@@ -105,18 +94,7 @@ class StatusViewMixin:
                         if not entry:
                             continue
                         service_name, _checker = entry
-                        udp_btn = tk.Button(
-                            port_frame,
-                            text=service_name,
-                            bg="gray",
-                            fg="white",
-                            disabledforeground="white",
-                            relief="raised",
-                            borderwidth=1,
-                            state=tk.DISABLED,
-                            padx=4,
-                            pady=1,
-                        )
+                        udp_btn = create_indicator_button(port_frame, service_name)
                         udp_btn.pack(side=tk.LEFT, padx=2)
                         udp_widgets[service_name] = udp_btn
             except Exception:

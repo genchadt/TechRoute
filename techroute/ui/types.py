@@ -86,3 +86,19 @@ class UIContext(Protocol):
     def shrink_to_fit(self) -> None: ...
     def lock_min_size_to_current(self) -> None: ...
     def refresh_ui_for_settings_change(self) -> None: ...
+
+
+def create_indicator_button(parent: tk.Widget, text: str) -> tk.Button:
+    """Creates a standardized indicator button."""
+    return tk.Button(
+        parent,
+        text=text,
+        bg="gray",
+        fg="white",
+        disabledforeground="white",
+        relief="raised",
+        borderwidth=1,
+        state=tk.DISABLED,
+        padx=4,
+        pady=1,
+    )

@@ -20,7 +20,7 @@ DEFAULT_CONFIG = {
     'udp_services_to_check': [161, 427, 3702, 5353],
     # UI preferences
     'ui_theme': 'System',            # Options: System, Light, Dark
-    'port_readability': 'Numbers',   # Options: Numbers, Simple
+    'tcp_port_readability': 'Numbers',   # Options: Numbers, Simple
     'window_settings': {
         'width_percentage': 110,
     },
