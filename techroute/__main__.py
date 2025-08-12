@@ -99,7 +99,7 @@ def main() -> None:
     Handles initial setup, security warning, and main loop execution.
     """
     # 1. Ensure proper Windows taskbar icon/grouping before any windows are created
-    _set_windows_appusermodelid()
+    _set_windows_appusermdelid()
 
     # 2. Create the root Tkinter window (hidden initially)
     root = tk.Tk()
