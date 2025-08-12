@@ -20,6 +20,10 @@ from typing import Dict, Any, List, Optional, Tuple, cast
 import sys
 import time
 import random
+import psutil
+from functools import lru_cache
+import ipaddress
+from .routing import get_default_gateway
 
 def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """
@@ -135,131 +139,66 @@ def open_browser_with_url(url: str, browser_command: Optional[Dict[str, Any]]):
     except (OSError, FileNotFoundError) as e:
         print(f"Error launching preferred browser: {e}. The browser might not be installed correctly.")
         # No fallback to webbrowser.open() here, as the fallback is handled at the start.
-    
-def _udp_probe_primary_ip(family: int) -> Optional[str]:
-    """Tries to discover the primary local IP by opening a UDP socket to a public IP."""
-    try:
-        with socket.socket(family, socket.SOCK_DGRAM) as s:
-            # We don't actually send anything; just connect to pick a route
-            if family == socket.AF_INET:
-                s.connect(("8.8.8.8", 80))
-            else:
-                s.connect(("2001:4860:4860::8888", 80))
-            return s.getsockname()[0]
-    except OSError:
-        return None
 
-def _cidr_to_netmask(prefix_len: int) -> str:
-    """Converts IPv4 CIDR prefix length to dotted decimal subnet mask."""
-    mask = (0xffffffff << (32 - prefix_len)) & 0xffffffff
-    return ".".join(str((mask >> (8 * i)) & 0xff) for i in reversed(range(4)))
-
-def _parse_ipconfig_windows(output: str) -> Dict[str, Optional[str]]:
-    """Parses ipconfig output to find primary interface IPv4, IPv6, mask, and default gateway."""
+def get_network_info() -> Dict[str, Optional[str]]:
+    """
+    Returns basic network info using psutil for cross-platform reliability.
+    """
     primary_ipv4: Optional[str] = None
     primary_ipv6: Optional[str] = None
     subnet_mask: Optional[str] = None
     gateway: Optional[str] = None
-    gateway_v4: Optional[str] = None
-    gateway_v6: Optional[str] = None
 
-    current_has_gateway = False
-    # ipconfig uses CRLF; normalize lines
-    for line in output.splitlines():
-        line = line.strip()
-        if not line:
-            # Section boundary; reset flag for next adapter block
-            current_has_gateway = False
-            continue
-
-        # IPv4 Address line
-        if "IPv4 Address" in line and ":" in line:
-            try:
-                value = line.split(":", 1)[1].strip()
-                # Newer ipconfig shows IPv4 Address. . . . . . . . . . . : 192.168.1.10
-                if value and value != "0.0.0.0" and primary_ipv4 is None:
-                    primary_ipv4 = value
-            except Exception:
-                pass
-        # Subnet Mask line
-        elif line.startswith("Subnet Mask") and ":" in line and subnet_mask is None:
-            try:
-                value = line.split(":", 1)[1].strip()
-                if value:
-                    subnet_mask = value
-            except Exception:
-                pass
-        # Default Gateway line
-        elif line.startswith("Default Gateway") and ":" in line and (gateway_v4 is None or gateway_v6 is None):
-            try:
-                value = line.split(":", 1)[1].strip()
-                # Sometimes the first Default Gateway line is blank and the next line has the value
-                if value:
-                    # Classify as IPv4 vs IPv6 and store separately
-                    if ":" in value:
-                        if gateway_v6 is None:
-                            gateway_v6 = value
-                    else:
-                        if gateway_v4 is None:
-                            gateway_v4 = value
-                    current_has_gateway = True
-                else:
-                    current_has_gateway = True
-            except Exception:
-                pass
-        elif current_has_gateway and (gateway_v4 is None or gateway_v6 is None):
-            # The line immediately after a blank Default Gateway can contain the IP
-            parts = line.split()
-            if parts and re.match(r"^[0-9a-fA-F:.%]+$", parts[0]):
-                val = parts[0]
-                if ":" in val:
-                    if gateway_v6 is None:
-                        gateway_v6 = val
-                else:
-                    if gateway_v4 is None:
-                        gateway_v4 = val
-        # IPv6 Address lines
-        elif ("IPv6 Address" in line or "Link-local IPv6 Address" in line) and ":" in line and primary_ipv6 is None:
-            try:
-                value = line.split(":", 1)[1].strip()
-                # Remove possible (Preferred) suffix
-                value = value.split(" ")[0]
-                if value:
-                    primary_ipv6 = value
-            except Exception:
-                pass
-
-    # Prefer IPv4 gateway if available
-    gateway = gateway_v4 or gateway_v6
-    return {
-        "primary_ipv4": primary_ipv4,
-        "primary_ipv6": primary_ipv6,
-        "subnet_mask": subnet_mask,
-        "gateway": gateway,
-    }
-
-def _linux_network_info() -> Dict[str, Optional[str]]:
-    primary_ipv4 = _udp_probe_primary_ip(socket.AF_INET)
-    primary_ipv6 = _udp_probe_primary_ip(socket.AF_INET6)
-    gateway = None
-    subnet_mask = None
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
-        # default route
-        out = subprocess.check_output(["ip", "route", "show", "default"], text=True, creationflags=creationflags)
-        m = re.search(r"default via (\S+).* dev (\S+)", out)
-        if m:
-            gateway = m.group(1)
-            dev = m.group(2)
-            # find cidr for that dev
-            out4 = subprocess.check_output(["ip", "-o", "-4", "addr", "show", "dev", dev], text=True, creationflags=creationflags)
-            m4 = re.search(r"inet (\d+\.\d+\.\d+\.\d+)/(\d+)", out4)
-            if m4:
-                if not primary_ipv4:
-                    primary_ipv4 = m4.group(1)
-                subnet_mask = _cidr_to_netmask(int(m4.group(2)))
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        pass
+        # Get all network interfaces
+        addrs = psutil.net_if_addrs()
+        gateway = get_default_gateway()
+
+        # Find the interface associated with the gateway to get other network info
+        default_interface = None
+        if gateway:
+            for if_name, if_addrs in addrs.items():
+                for addr in if_addrs:
+                    if addr.family == socket.AF_INET and addr.netmask:
+                        # A simple heuristic: if an interface's network contains the gateway,
+                        # it's likely the right one. This is not foolproof.
+                        try:
+                            ip_net = ipaddress.ip_network(f"{addr.address}/{addr.netmask}", strict=False)
+                            if ipaddress.ip_address(gateway) in ip_net:
+                                default_interface = if_name
+                                break
+                        except (ValueError, TypeError):
+                            continue
+                if default_interface:
+                    break
+        
+        if default_interface and default_interface in addrs:
+            # Prioritize the default interface for finding the primary IP
+            for addr in addrs[default_interface]:
+                if addr.family == socket.AF_INET:
+                    primary_ipv4 = addr.address
+                    subnet_mask = addr.netmask
+                elif addr.family == socket.AF_INET6 and not addr.address.startswith("fe80::"):
+                    if primary_ipv6 is None: # Take the first non-link-local IPv6
+                        primary_ipv6 = addr.address
+
+        # Fallback if default interface logic fails: iterate all interfaces
+        if not primary_ipv4:
+            for if_name, if_addrs in addrs.items():
+                # Skip loopback interfaces
+                if if_name.lower().startswith('lo') or 'loopback' in if_name.lower():
+                    continue
+                for addr in if_addrs:
+                    if addr.family == socket.AF_INET:
+                        if primary_ipv4 is None:
+                            primary_ipv4 = addr.address
+                            subnet_mask = addr.netmask
+                    elif addr.family == socket.AF_INET6 and not addr.address.startswith("fe80::"):
+                        if primary_ipv6 is None:
+                            primary_ipv6 = addr.address
+    except Exception as e:
+        print(f"Could not retrieve network info using psutil: {e}")
+
     return {
         "primary_ipv4": primary_ipv4,
         "primary_ipv6": primary_ipv6,
@@ -267,73 +206,6 @@ def _linux_network_info() -> Dict[str, Optional[str]]:
         "gateway": gateway,
     }
 
-def _macos_network_info() -> Dict[str, Optional[str]]:
-    primary_ipv4 = _udp_probe_primary_ip(socket.AF_INET)
-    primary_ipv6 = _udp_probe_primary_ip(socket.AF_INET6)
-    gateway = None
-    subnet_mask = None
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    try:
-        out = subprocess.check_output(["route", "-n", "get", "default"], text=True, creationflags=creationflags)
-        m = re.search(r"gateway:\s+(\S+)", out)
-        if m:
-            gateway = m.group(1)
-        m = re.search(r"interface:\s+(\S+)", out)
-        if m:
-            iface = m.group(1)
-            try:
-                out_if = subprocess.check_output(["ifconfig", iface], text=True, creationflags=creationflags)
-                m4 = re.search(r"inet (\d+\.\d+\.\d+\.\d+) netmask 0x([0-9a-fA-F]+)", out_if)
-                if m4:
-                    if not primary_ipv4:
-                        primary_ipv4 = m4.group(1)
-                    mask_hex = int(m4.group(2), 16)
-                    subnet_mask = ".".join(str((mask_hex >> (8 * i)) & 0xff) for i in reversed(range(4)))
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                pass
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-    return {
-        "primary_ipv4": primary_ipv4,
-        "primary_ipv6": primary_ipv6,
-        "subnet_mask": subnet_mask,
-        "gateway": gateway,
-    }
-
-def get_network_info() -> Dict[str, Optional[str]]:
-    """Returns basic network info: primary IPv4/IPv6, default gateway, subnet mask.
-
-    This uses platform-specific commands when available and falls back to socket probes.
-    """
-    system = platform.system().lower()
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    if system == "windows":
-        try:
-            out = subprocess.check_output(["ipconfig"], text=True, creationflags=creationflags)
-            info = _parse_ipconfig_windows(out)
-            # Fallback primary IPs if missing
-            info.setdefault("primary_ipv4", _udp_probe_primary_ip(socket.AF_INET))
-            info.setdefault("primary_ipv6", _udp_probe_primary_ip(socket.AF_INET6))
-            return info
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            pass
-        return {
-            "primary_ipv4": _udp_probe_primary_ip(socket.AF_INET),
-            "primary_ipv6": _udp_probe_primary_ip(socket.AF_INET6),
-            "subnet_mask": None,
-            "gateway": None,
-        }
-    if system == "linux":
-        return _linux_network_info()
-    if system == "darwin":
-        return _macos_network_info()
-    # Unknown OS fallback
-    return {
-        "primary_ipv4": _udp_probe_primary_ip(socket.AF_INET),
-        "primary_ipv6": _udp_probe_primary_ip(socket.AF_INET6),
-        "subnet_mask": None,
-        "gateway": None,
-    }
 def _parse_latency(ping_output: str, is_windows: bool) -> str:
     """Parses latency from the ping command's stdout."""
     try:
@@ -354,9 +226,7 @@ def _parse_latency(ping_output: str, is_windows: bool) -> str:
         pass
     return ""
 
-_DNS_CACHE: Dict[str, Tuple[float, List[Tuple[int, str, int, int]]]] = {}
-_DNS_TTL_SECONDS = 300  # cache DNS results for 5 minutes
-
+@lru_cache(maxsize=128)
 def _is_ip_literal(host: str) -> Tuple[bool, Optional[int]]:
     try:
         ip_obj = socket.inet_pton(socket.AF_INET, host)
@@ -369,6 +239,7 @@ def _is_ip_literal(host: str) -> Tuple[bool, Optional[int]]:
     except OSError:
         return False, None
 
+@lru_cache(maxsize=128)
 def _cached_resolve_host(host: str) -> List[Tuple[int, str, int, int]]:
     """Resolve hostname to a list of addresses with basic TTL cache.
 
@@ -392,11 +263,6 @@ def _cached_resolve_host(host: str) -> List[Tuple[int, str, int, int]]:
                 # Not an interface name or not available
                 scopeid = 0
             return [(socket.AF_INET6, ip_only, 0, scopeid)]
-
-    now = time.time()
-    cached = _DNS_CACHE.get(host)
-    if cached and now - cached[0] < _DNS_TTL_SECONDS:
-        return cached[1]
 
     results: List[Tuple[int, str, int, int]] = []
     try:
@@ -429,7 +295,6 @@ def _cached_resolve_host(host: str) -> List[Tuple[int, str, int, int]]:
             seen.add(key)
             deduped.append(rec)
 
-    _DNS_CACHE[host] = (now, deduped)
     return deduped
 
 def _select_ping_target(host: str) -> Tuple[str, bool]:

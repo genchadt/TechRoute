@@ -30,15 +30,8 @@ class StatusViewMixin:
             # Add a simple label as a placeholder. The layout management will handle sizing.
             placeholder = ttk.Label(self.status_frame, text="Waiting for targets...", foreground="gray")
             placeholder.pack(pady=10, padx=10)
-            self.hide_scrollbar()
-            # Update canvas height after content changes (avoid resizing the window here)
-            try:
-                cast(Any, self)._schedule_status_canvas_height_update()
-            except Exception:
-                pass
             return
 
-    # Defer scrollbar visibility to dynamic sizing logic in the builder.
         for target in targets:
             original_string, ports = target['original_string'], target['ports']
 
@@ -130,12 +123,6 @@ class StatusViewMixin:
                 "port_widgets": port_widgets,
                 "udp_widgets": udp_widgets,
             }
-
-        # After building the list, update canvas height (avoid resizing the window here)
-        try:
-            cast(Any, self)._schedule_status_canvas_height_update()
-        except Exception:
-            pass
 
     def update_status_in_gui(self: UIContext, original_string: str, status: str, color: str, port_statuses: Optional[Dict[int, str]], latency_str: str, web_port_open: bool, udp_service_statuses: Optional[Dict[str, str]] = None):
         """Updates the GUI widgets for a specific IP. Must be called from the main thread."""

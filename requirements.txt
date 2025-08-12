@@ -1,5 +1,3 @@
-PyYAML>=6.0
-python-nmap>=0.7.1
-zeroconf>=0.131.0
-pysnmp>=4.4.12
-dbus-python; sys_platform == "linux"
+psutil
+pysnmp
+zeroconf

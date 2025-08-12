@@ -15,7 +15,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk, messagebox
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 from . import configuration, network
 from .ui import AppUI
@@ -147,6 +147,18 @@ class TechRouteApp:
         else:
             self.ui.update_status_bar("Gateway not detected.")
 
+    def clear_input_field(self):
+        """Clears the content of the IP entry field."""
+        try:
+            if str(self.ui.ip_entry.cget('state')) != str(tk.NORMAL):
+                self.ui.update_status_bar("Input disabled while pinging.")
+                return
+            self.ui.ip_entry.delete("1.0", tk.END)
+            self.ui.update_status_bar("Input field cleared.")
+        except tk.TclError:
+            # This can happen if the window is being destroyed.
+            pass
+
     def update_config(self, new_config: Dict[str, Any]):
         """Updates the application's config and saves it."""
         self.config = new_config
@@ -163,84 +175,72 @@ class TechRouteApp:
         lines = [line.strip() for line in ip_string.splitlines() if line.strip()]
         
         for line in lines:
-            host: str
-            ports_list: List[int] = []
-
-            default_ports = self.config.get('default_ports_to_check', [])
-
-            s = line.strip()
-            # Case 1: Bracketed IPv6 or hostname with ports: [host]:p1,p2
-            if s.startswith('['):
-                end = s.find(']')
-                if end == -1:
-                    messagebox.showerror("Invalid Target", f"Missing closing ']' in '{s}'. For IPv6 with ports use: [fe80::1]:80,443")
-                    return []
-                host = s[1:end]
-                rest = s[end+1:].strip()
-                if rest.startswith(':'):
-                    port_str = rest[1:].strip()
-                    if port_str:
-                        try:
-                            ports_list = [int(p.strip()) for p in port_str.split(',') if p.strip()]
-                            if not all(0 < port < 65536 for port in ports_list):
-                                raise ValueError
-                        except ValueError:
-                            messagebox.showerror("Invalid Port", f"Invalid port list in '{s}'. Use comma-separated numbers (1-65535).")
-                            return []
-                elif rest:
-                    messagebox.showerror("Invalid Target", f"Unexpected text after ']': '{rest}'.")
-                    return []
-            else:
-                # Case 2: Whole string may be an IP literal (v4 or v6) without ports
-                try:
-                    ipaddress.ip_address(s)
-                    host = s
-                except ValueError:
-                    # Case 3: hostname or IPv4 with ports: host:ports
-                    if ':' in s:
-                        host, port_str = s.split(':', 1)
-                        host = host.strip()
-                        port_str = port_str.strip()
-                        if port_str:
-                            try:
-                                ports_list = [int(p.strip()) for p in port_str.split(',') if p.strip()]
-                                if not all(0 < port < 65536 for port in ports_list):
-                                    raise ValueError
-                            except ValueError:
-                                messagebox.showerror("Invalid Port", f"Invalid port list in '{s}'. Use comma-separated numbers (1-65535).")
-                                return []
-                    else:
-                        host = s
-
-            # Validate hostname if not an IP literal
             try:
-                ipaddress.ip_address(host)
-                is_ip_literal = True
-            except ValueError:
-                is_ip_literal = False
-
-            if not is_ip_literal:
-                hostname = host
-                if len(hostname) > 253 or len(hostname) == 0:
-                    messagebox.showerror("Invalid Hostname", f"The hostname '{hostname}' is not valid.")
-                    return []
-                labels = hostname.split('.')
-                for lbl in labels:
-                    if not (1 <= len(lbl) <= 63):
-                        messagebox.showerror("Invalid Hostname", f"The hostname '{hostname}' has an invalid label length.")
-                        return []
-                    if lbl.startswith('-') or lbl.endswith('-'):
-                        messagebox.showerror("Invalid Hostname", f"The hostname '{hostname}' has a label starting/ending with '-'.")
-                        return []
-                    for ch in lbl:
-                        if not (ch.isalnum() or ch == '-'):
-                            messagebox.showerror("Invalid Hostname", f"The hostname '{hostname}' contains invalid character '{ch}'.")
-                            return []
-
-            # Build target
-            target: Dict[str, Any] = {'ip': host, 'ports': sorted(list(set((ports_list or []) + default_ports))), 'original_string': line}
-            targets.append(target)
+                host, ports_list = self._parse_target_line(line)
+                self._validate_host(host)
+                default_ports = self.config.get('default_ports_to_check', [])
+                target: Dict[str, Any] = {'ip': host, 'ports': sorted(list(set(ports_list + default_ports))), 'original_string': line}
+                targets.append(target)
+            except ValueError as e:
+                messagebox.showerror("Invalid Target", str(e))
+                return []
         return targets
+
+    def _parse_target_line(self, line: str) -> Tuple[str, List[int]]:
+        """Parses a single line of target input into a host and a list of ports."""
+        s = line.strip()
+        if s.startswith('['):
+            end = s.find(']')
+            if end == -1:
+                raise ValueError(f"Missing closing ']' in '{s}'. For IPv6 with ports use: [fe80::1]:80,443")
+            host = s[1:end]
+            rest = s[end+1:].strip()
+            if rest.startswith(':'):
+                port_str = rest[1:].strip()
+                if port_str:
+                    return host, self._parse_ports(port_str, s)
+            elif rest:
+                raise ValueError(f"Unexpected text after ']': '{rest}'.")
+            return host, []
+        else:
+            try:
+                ipaddress.ip_address(s)
+                return s, []
+            except ValueError:
+                if ':' in s:
+                    host, port_str = s.split(':', 1)
+                    host = host.strip()
+                    port_str = port_str.strip()
+                    if port_str:
+                        return host, self._parse_ports(port_str, s)
+                return s, []
+
+    def _parse_ports(self, port_str: str, original_line: str) -> List[int]:
+        """Parses a comma-separated string of ports into a list of integers."""
+        try:
+            ports = [int(p.strip()) for p in port_str.split(',') if p.strip()]
+            if not all(0 < port < 65536 for port in ports):
+                raise ValueError
+            return ports
+        except ValueError:
+            raise ValueError(f"Invalid port list in '{original_line}'. Use comma-separated numbers (1-65535).")
+
+    def _validate_host(self, host: str) -> None:
+        """Validates a hostname or IP address."""
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            if len(host) > 253 or len(host) == 0:
+                raise ValueError(f"The hostname '{host}' is not valid.")
+            labels = host.split('.')
+            for lbl in labels:
+                if not (1 <= len(lbl) <= 63):
+                    raise ValueError(f"The hostname '{host}' has an invalid label length.")
+                if lbl.startswith('-') or lbl.endswith('-'):
+                    raise ValueError(f"The hostname '{host}' has a label starting/ending with '-'.")
+                for ch in lbl:
+                    if not (ch.isalnum() or ch == '-'):
+                        raise ValueError(f"The hostname '{host}' contains invalid character '{ch}'.")
 
     def _extract_host(self, value: str) -> str:
         """Extracts the host from an input line that may include ports and/or IPv6 brackets."""
@@ -398,12 +398,7 @@ class TechRouteApp:
                 message = self.update_queue.get_nowait()
 
                 # Unpack the main status update
-                # Support both old (without UDP) and new (with UDP) tuples
-                if len(message) >= 7:
-                    original_string, status, color, port_statuses, latency_str, web_port_open, udp_service_statuses = message
-                else:
-                    original_string, status, color, port_statuses, latency_str, web_port_open = message
-                    udp_service_statuses = None
+                original_string, status, color, port_statuses, latency_str, web_port_open, udp_service_statuses = message
 
                 self.ui.update_status_in_gui(
                     original_string,
