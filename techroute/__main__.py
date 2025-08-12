@@ -17,8 +17,7 @@ ICON_ICO_NAME = "icon.ico"
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
 
 # --- Helper Functions ---
-
-def _set_windows_appusermodelid() -> None:
+def _set_windows_appusermdelid() -> None:
     """
     Sets the Windows AppUserModelID for proper taskbar icon and grouping.
     This must be called before any Tkinter windows are created on Windows.
@@ -94,7 +93,6 @@ def _apply_platform_window_constraints(root: tk.Tk) -> None:
 
 
 # --- Main Application Entry Point ---
-
 def main() -> None:
     """
     Main function to start the TechRoute application.
