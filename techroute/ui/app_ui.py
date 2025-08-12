@@ -7,7 +7,7 @@ and managing all Tkinter widgets for the main application window.
 from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import Dict, Any, Optional, TYPE_CHECKING, Callable
 
 from .menu import MenuMixin
 from .dialogs import DialogsMixin
@@ -86,3 +86,36 @@ class AppUI(MenuMixin, DialogsMixin, AnimationsMixin, BuilderMixin, StatusViewMi
 
         self._setup_menu()
         self._setup_ui(browser_name)
+
+    def lock_min_size_to_current(self) -> None:
+        """Locks the window's minimum size to its current size."""
+        super().lock_min_size_to_current()
+
+    def shrink_to_fit(self) -> None:
+        """Resizes the window to fit its content, with a 10% width increase."""
+        super().shrink_to_fit()
+
+    def refresh_ui_for_settings_change(self) -> None:
+        """Refreshes UI elements that depend on configuration settings."""
+        # Update local service indicators
+        readability = self.app_controller.config.get('port_readability', 'Numbers')
+        service_map = self.app_controller.config.get('port_service_map', {})
+        for port, button in self.local_service_indicators.items():
+            display_text = str(port)
+            if readability == 'Simple':
+                display_text = service_map.get(str(port), str(port))
+            button.config(text=display_text)
+
+        # If there are active statuses, redraw them to reflect the new setting
+        if self.status_widgets:
+            # Get the current list of targets from the status_widgets keys
+            targets = [{'original_string': s, 'ports': list(w.get('port_widgets', {}).keys())} for s, w in self.status_widgets.items()]
+            self.setup_status_display(targets)
+            
+            # After redrawing, we need to re-apply the last known status to each widget
+            # This is a simplified re-application; a more robust solution might store
+            # the last full status update message and re-run it.
+            for original_string, widgets in self.status_widgets.items():
+                # This is a visual refresh of names, not a full status update.
+                # The next ping cycle will bring the correct colors and states.
+                pass

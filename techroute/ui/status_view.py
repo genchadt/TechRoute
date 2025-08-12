@@ -65,11 +65,16 @@ class StatusViewMixin:
 
             port_widgets = {}
             if ports:
+                readability = self.app_controller.config.get('port_readability', 'Numbers')
+                service_map = self.app_controller.config.get('port_service_map', {})
                 for port in ports:
+                    display_text = str(port)
+                    if readability == 'Simple':
+                        display_text = service_map.get(str(port), str(port))
                     # Create a button for each port. It will be enabled/disabled based on status.
                     port_button = tk.Button(
                         port_frame,
-                        text=f"{port}",
+                        text=display_text,
                         bg="gray",
                         fg="white",
                         disabledforeground="white",

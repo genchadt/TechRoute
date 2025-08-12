@@ -7,6 +7,7 @@ from tkinter import ttk
 from tkinter import font as tkfont
 from typing import Dict, Any
 from .types import UIContext
+from ..checkers import get_udp_service_registry
 
 
 class BuilderMixin:
@@ -25,6 +26,8 @@ class BuilderMixin:
         # When the content frame's size changes, update the canvas's scroll region.
         # This makes the scrollbar aware of the full content height.
         self.status_canvas.configure(scrollregion=self.status_canvas.bbox("all"))
+        # Defer the check to avoid race conditions on widget creation/destruction
+        self.root.after_idle(self._toggle_status_scrollbar)
 
     def _setup_ui(self: UIContext, browser_name: str) -> None:
         # Status Bar
@@ -87,12 +90,20 @@ class BuilderMixin:
         local_services_frame = ttk.Frame(netgrid)
         local_services_frame.grid(row=2, column=1, columnspan=3, sticky="w", padx=(6, 0), pady=(4, 0))
         # Ports to check on localhost
-        self._local_service_ports = [20, 21, 22, 139, 445]
+        self._local_service_ports = [20, 21, 22, 445]
         self.local_service_indicators = {}
+        
+        readability = self.app_controller.config.get('port_readability', 'Numbers')
+        service_map = self.app_controller.config.get('port_service_map', {})
+
         for p in self._local_service_ports:
+            display_text = str(p)
+            if readability == 'Simple':
+                display_text = service_map.get(str(p), str(p))
+
             btn = tk.Button(
                 local_services_frame,
-                text=f"{p}",
+                text=display_text,
                 bg="gray",
                 fg="white",
                 disabledforeground="white",
@@ -104,6 +115,30 @@ class BuilderMixin:
             )
             btn.pack(side=tk.LEFT, padx=(0, 4))
             self.local_service_indicators[p] = btn
+
+        # Add UDP services from config
+        udp_ports_cfg = self.app_controller.config.get('udp_services_to_check', []) or []
+        if udp_ports_cfg:
+            registry = get_udp_service_registry()
+            for udp_port in udp_ports_cfg:
+                entry = registry.get(int(udp_port))
+                if not entry:
+                    continue
+                service_name, _checker = entry
+                btn = tk.Button(
+                    local_services_frame,
+                    text=service_name,
+                    bg="gray",
+                    fg="white",
+                    disabledforeground="white",
+                    relief="raised",
+                    borderwidth=1,
+                    state=tk.DISABLED,
+                    padx=4,
+                    pady=1,
+                )
+                btn.pack(side=tk.LEFT, padx=(0, 4))
+                self.local_service_indicators[udp_port] = btn
         # Start a background update after network info loads
         try:
             self.root.after(100, getattr(self, "_start_local_services_check"))
@@ -137,15 +172,12 @@ class BuilderMixin:
         # Input text area with scrollbars
         text_frame = ttk.Frame(self.input_frame)
         text_frame.pack(pady=5, fill=tk.X, expand=True)
-        self.ip_entry = tk.Text(text_frame, width=60, height=6, wrap="none")
+        self.ip_entry = tk.Text(text_frame, width=60, height=6, wrap="word")
         self.ip_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.ip_entry.focus()
         vscrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=self.ip_entry.yview)
         vscrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.ip_entry.config(yscrollcommand=vscrollbar.set)
-        hscrollbar = ttk.Scrollbar(self.input_frame, orient=tk.HORIZONTAL, command=self.ip_entry.xview)
-        hscrollbar.pack(fill=tk.X)
-        self.ip_entry.config(xscrollcommand=hscrollbar.set)
 
         # Status Area with optional Scrollbar
         self.status_container = ttk.Frame(self.main_frame)
@@ -156,10 +188,15 @@ class BuilderMixin:
 
         self.status_frame_window = self.status_canvas.create_window((0, 0), window=self.status_frame, anchor="nw")
 
-        # Layout: Canvas fills the area, Scrollbar is on the right
-        self.status_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.status_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # Layout: Use grid to manage canvas and scrollbar
+        self.status_container.rowconfigure(0, weight=1)
+        self.status_container.columnconfigure(0, weight=1)
+        self.status_canvas.grid(row=0, column=0, sticky="nsew")
+        self.status_scrollbar.grid(row=0, column=1, sticky="ns")
         self.status_canvas.config(yscrollcommand=self.status_scrollbar.set)
+
+        # Initially hide the scrollbar. It will be shown as needed by _toggle_status_scrollbar
+        self.status_scrollbar.grid_remove()
 
         # Bind events for resizing
         self.status_frame.bind("<Configure>", self._on_status_frame_configure)
@@ -200,6 +237,20 @@ class BuilderMixin:
         self.root.bind("<Alt-p>", lambda event: self.polling_rate_entry.focus_set())
         self.root.bind("<Alt-i>", lambda event: self.ip_entry.focus_set())
 
+    def _toggle_status_scrollbar(self: UIContext) -> None:
+        """Shows or hides the status view scrollbar based on content height."""
+        try:
+            self.status_frame.update_idletasks()
+            frame_height = self.status_frame.winfo_reqheight()
+            canvas_height = self.status_canvas.winfo_height()
+            if frame_height > canvas_height:
+                self.status_scrollbar.grid()
+            else:
+                self.status_scrollbar.grid_remove()
+        except Exception:
+            # Can fail if widgets are being destroyed.
+            pass
+
     def lock_min_size_to_current(self: UIContext) -> None:
         try:
             self.root.update_idletasks()
@@ -217,7 +268,12 @@ class BuilderMixin:
             # Only grow the window if needed; don't shrink below current size
             cur_w = max(1, self.root.winfo_width())
             cur_h = max(1, self.root.winfo_height())
-            new_w = max(cur_w, req_w)
+            
+            # Get width percentage from config, default to 100%
+            width_percentage = self.app_controller.config.get('window_settings', {}).get('width_percentage', 100)
+            width_multiplier = max(50, width_percentage) / 100.0
+
+            new_w = max(cur_w, int(req_w * width_multiplier))
             new_h = max(cur_h, req_h)
 
             # On Linux, set both geometry and minsize when not actively dragging
@@ -276,6 +332,26 @@ class BuilderMixin:
                         except Exception:
                             status_v6 = "Closed"
                         results[p] = ("Open" if (status_v4 == "Open" or status_v6 == "Open") else "Closed")
+
+                    # --- UDP Service Checks ---
+                    udp_ports_cfg = self.app_controller.config.get('udp_services_to_check', []) or []
+                    if udp_ports_cfg:
+                        registry = get_udp_service_registry()
+                        for udp_port in udp_ports_cfg:
+                            entry = registry.get(int(udp_port))
+                            if not entry:
+                                continue
+                            _service_name, checker = entry
+                            status = "Closed"
+                            try:
+                                # Check both localhost interfaces
+                                res_v4 = checker.check(host_v4, timeout=timeout)
+                                res_v6 = checker.check(host_v6, timeout=timeout)
+                                if (res_v4 and res_v4.available) or (res_v6 and res_v6.available):
+                                    status = "Open"
+                            except Exception:
+                                status = "Closed"
+                            results[udp_port] = status
 
                     def _apply():
                         try:

@@ -167,6 +167,10 @@ class DialogsMixin:
             new_config['ui_theme'] = theme_var.get()
             new_config['port_readability'] = port_readability_var.get()
             self.app_controller.update_config(new_config)
+            
+            # Trigger a UI refresh to apply settings live
+            self.app_controller.ui.refresh_ui_for_settings_change()
+            
             dialog.destroy()
 
         ttk.Button(btns, text="Save", command=save_settings).pack(side=tk.LEFT, padx=5)

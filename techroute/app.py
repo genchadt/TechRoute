@@ -8,6 +8,7 @@ and coordinates with the network module to run pinging operations.
 """
 
 import ipaddress
+import json
 import os
 import platform
 import queue
@@ -28,6 +29,16 @@ class TechRouteApp:
         """Initializes the application."""
         # Load configuration from YAML file
         self.config = configuration.load_or_create_config()
+
+        # Load port service mappings from JSON
+        try:
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            mappings_path = os.path.join(base_dir, "techroute", "port_services.json")
+            with open(mappings_path, 'r') as f:
+                self.config['port_service_map'] = json.load(f)
+        except (IOError, json.JSONDecodeError) as e:
+            print(f"Warning: Could not load port service mappings. {e}")
+            self.config['port_service_map'] = {}
 
         self.root = root
         self.root.title("TechRoute - Machine Service Checker")
