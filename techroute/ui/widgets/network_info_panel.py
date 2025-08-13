@@ -61,11 +61,28 @@ class NetworkInfoPanel(ttk.Frame):
             self.local_service_indicators[p] = btn
 
         udp_ports_cfg = config.get('udp_services_to_check', [])
+        # Add separator between TCP and UDP services
+        if self._local_service_ports and udp_ports_cfg:
+            sep = ttk.Separator(self.local_services_frame, orient=tk.VERTICAL)
+            sep.pack(side=tk.LEFT, padx=5, fill=tk.Y)
         if udp_ports_cfg:
             registry = get_udp_service_registry()
+            # Get all UDP services first
+            udp_services = []
             for udp_port in udp_ports_cfg:
                 entry = registry.get(int(udp_port))
                 if not entry: continue
+                udp_services.append((udp_port, entry))
+            
+            # Pack in specific order: mDNS, SNMP, WS-Discovery, SLP
+            ordered_services = []
+            for name, port in [('mDNS', 5353), ('SNMP', 161), ('WS-Discovery', 3702), ('SLP', 427)]:
+                for udp_port, entry in udp_services:
+                    if entry[0] == name:
+                        ordered_services.append((udp_port, entry))
+                        break
+            
+            for udp_port, entry in ordered_services:
                 service_name, _checker = entry
                 btn = create_indicator_button(self.local_services_frame, service_name, is_placeholder=True)
                 btn.pack(side=tk.LEFT, padx=(0, 4))
