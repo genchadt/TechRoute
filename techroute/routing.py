@@ -14,29 +14,18 @@ from typing import Optional, Tuple
 
 def _get_windows_gateway() -> Optional[str]:
     """
-    Uses PowerShell to get the default gateway for the active network connection on Windows.
-    This is more reliable than parsing `ipconfig` as it is not dependent on string localization.
-    It now explicitly selects the first available gateway to handle multi-homed systems.
+    Uses PowerShell to get the default gateway.
     """
     try:
-        # Command updated to select the first valid gateway from potentially multiple active adapters.
         command = "powershell -Command \"(Get-NetIPConfiguration | Where-Object { $_.NetAdapter.Status -eq 'Up' -and $_.IPv4DefaultGateway -ne $null } | Select-Object -First 1).IPv4DefaultGateway.NextHop\""
-        
-        # Using CREATE_NO_WINDOW flag to prevent a console window from flashing.
         si = subprocess.STARTUPINFO()
         si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         si.wShowWindow = subprocess.SW_HIDE
-
         output = subprocess.check_output(command, text=True, stderr=subprocess.PIPE, startupinfo=si)
-        
-        # The command might still return multiple lines if something is unusual. Take the first one.
         first_line = output.strip().splitlines()[0] if output.strip() else None
-        
         if first_line and first_line != "0.0.0.0":
             return first_line
-            
     except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
-        # IndexError is caught in case output is empty.
         return None
     return None
 

@@ -11,6 +11,7 @@ import os
 import platform
 import tkinter as tk
 from tkinter import messagebox
+from . import configuration
 from .localization import LocalizationManager
 try:
     import ctypes
@@ -27,15 +28,18 @@ class MainApp:
         """Initializes the application components."""
         self.root = root
         
+        # Setup localization first to get the translator function
+        self.localization_manager = LocalizationManager(
+            configuration.load_or_create_config().get('language')
+        )
+        _ = self.localization_manager.translator
+
         # The controller must be created before the UI to access config
         self.controller = TechRouteController(
             on_status_update=self._handle_status_update,
             on_network_info_update=self._handle_network_info_update,
+            translator=_
         )
-
-        # Setup localization
-        self.localization_manager = LocalizationManager(self.controller.config.get('language'))
-        _ = self.localization_manager.translator
         self.root.title(_("TechRoute - Machine Service Checker"))
 
         self._set_icon()
@@ -48,24 +52,34 @@ class MainApp:
         # The UI must be created with a translator
         self.ui = AppUI(root, self, _)
         
+        # Set controller callbacks BEFORE linking UI and controller
+        # This ensures callbacks are available when the controller initializes
+        self.controller.on_checking_start = self.ui.start_blinking_animation
+        self.controller.on_pinging_start = self.ui.stop_animation
+        self.controller.on_ping_stop = self.ui.reset_status_indicator
+        self.controller.on_ping_update = lambda: self.ui.run_ping_animation(self.controller.get_polling_rate_ms())
+        
         # Now link the UI and controller
         self.controller.set_ui(self.ui)
         self.ui.set_controller(self.controller)
 
-        # Set controller callbacks that might depend on the UI
-        self.controller.on_checking_start = self.ui.start_blinking_animation
-        self.controller.on_pinging_start = self.ui.stop_blinking_animation
-        self.controller.on_ping_stop = self.ui.reset_status_indicator
-        self.controller.on_ping_update = lambda: self.ui.run_ping_animation(self.controller.get_polling_rate_ms())
-
         # Start the periodic queue processing
         self._process_controller_queue()
+
+    def handle_settings_change(self, old_config, new_config):
+        """Handles logic for applying settings changes."""
+        should_retranslate = new_config.get('language') != old_config.get('language')
+        if should_retranslate:
+            self.localization_manager.set_language(new_config.get('language'))
+            self.retranslate_ui()
 
     def retranslate_ui(self):
         """Retranslates the entire UI."""
         _ = self.localization_manager.translator
         self.root.title(_("TechRoute - Machine Service Checker"))
         self.ui.retranslate_ui(_)
+        if self.controller:
+            self.controller.update_config(self.controller.config)
 
     def _set_icon(self):
         """Sets the application icon based on the OS."""
@@ -87,7 +101,8 @@ class MainApp:
     def _handle_status_update(self, message: tuple):
         """Callback for the controller to send status updates to the UI."""
         try:
-            self.ui.process_status_update(message)
+            if self.ui:
+                self.ui.process_status_update(message)
         except tk.TclError:
             # Window is likely closing
             pass
@@ -95,7 +110,8 @@ class MainApp:
     def _handle_network_info_update(self, info: dict):
         """Callback for the controller to send network info to the UI."""
         try:
-            self.ui.update_network_info(info)
+            if self.ui:
+                self.ui.update_network_info(info)
             # Now that network info is loaded, lock the minimum window size
             self.root.update_idletasks()
             req_w = self.root.winfo_reqwidth()

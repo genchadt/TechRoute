@@ -4,35 +4,45 @@ Shared typing utilities for the TechRoute UI package.
 from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
-from typing import TypeVar, TYPE_CHECKING, Protocol, Optional, Dict, Any
+from typing import TypeVar, TYPE_CHECKING, Protocol, Optional, Dict, Any, Callable
 
 if TYPE_CHECKING:
     from .app_ui import AppUI
     from ..controller import TechRouteController
+    from ..app import MainApp
 
 AppUI_T = TypeVar("AppUI_T", bound="AppUI")
 
 class AppUIProtocol(Protocol):
     """Protocol defining the interface that mixins expect from the main UI class."""
     root: tk.Tk
+    config: Dict[str, Any]
     controller: Optional['TechRouteController']
+    main_app: 'MainApp'
     status_indicator: ttk.Label
     status_bar_label: ttk.Label
-    status_frame: ttk.LabelFrame
+    status_container: ttk.LabelFrame
+    status_frame: ttk.Frame
     status_widgets: Dict[str, Dict[str, Any]]
+    group_frames: Dict[str, ttk.LabelFrame]
     blinking_animation_job: Optional[str]
     ping_animation_job: Optional[str]
     
     def refresh_ui_for_settings_change(self) -> None: ...
     def update_status_bar(self, message: str) -> None: ...
-    def _open_settings_dialog(self) -> None: ...
+    def _open_settings_dialog(self, on_save: Callable[[Dict, Dict], None]) -> None: ...
 
-def create_indicator_button(parent: tk.Widget, text: str) -> tk.Button:
+def create_indicator_button(parent: tk.Widget, text: str, is_open: bool = False, is_placeholder: bool = False) -> tk.Button:
     """Creates a standardized indicator button."""
+    if is_placeholder:
+        color = "#9E9E9E"  # Standard grey for placeholders
+    else:
+        color = "#4CAF50" if is_open else "#F44336"
+        
     return tk.Button(
         parent,
         text=text,
-        bg="gray",
+        bg=color,
         fg="white",
         disabledforeground="white",
         relief="raised",

@@ -3,9 +3,8 @@ Main menu construction for the TechRoute application UI.
 """
 from __future__ import annotations
 import tkinter as tk
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 from .types import AppUIProtocol
-from typing import Callable
 
 class MenuMixin(AppUIProtocol):
     def _setup_menu(self, translator: Callable[[str], str]):
@@ -39,11 +38,11 @@ class MenuMixin(AppUIProtocol):
         # --- Settings Menu ---
         settings_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label=self._("Settings"), menu=settings_menu, underline=0)
-        settings_menu.add_command(label=self._("Preferences"), underline=0, command=self._open_settings_dialog)
-
-        # --- Language Sub-Menu ---
-        self.language_menu = tk.Menu(settings_menu, tearoff=0)
-        settings_menu.add_cascade(label=self._("Language"), menu=self.language_menu, underline=0)
+        settings_menu.add_command(
+            label=self._("Preferences"), 
+            underline=0, 
+            command=lambda: self._open_settings_dialog(on_save=self.main_app.handle_settings_change)
+        )
 
         # --- Help Menu ---
         help_menu = tk.Menu(self.menu_bar, tearoff=0)

@@ -34,7 +34,7 @@ class LocalizationManager:
 
         try:
             lang_gettext = gettext.translation(
-                'base',
+                'messages',
                 localedir=self.locales_dir,
                 languages=[lang_code]
             )

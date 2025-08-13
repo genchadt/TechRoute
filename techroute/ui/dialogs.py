@@ -6,7 +6,7 @@ import os
 import platform
 import tkinter as tk
 from tkinter import ttk, messagebox
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Dict
 
 from .. import configuration
 from .types import AppUIProtocol
@@ -49,7 +49,7 @@ class DialogsMixin(AppUIProtocol):
 
     def _center_dialog(self, dialog: tk.Toplevel, width: int, height: int):
         """Centers the dialog on the main window."""
-        # Ensure the main window's geometry is up-to-date
+        dialog.withdraw() # Hide the window until it's ready
         self.root.update_idletasks()
         
         parent_x = self.root.winfo_x()
@@ -62,6 +62,7 @@ class DialogsMixin(AppUIProtocol):
         y = parent_y + (parent_height // 2) - (height // 2)
         
         dialog.geometry(f"{width}x{height}+{x}+{y}")
+        dialog.deiconify() # Show the window now that it's centered
 
     def _open_ports_dialog(self):
         """Opens a dialog to edit the default ports."""
@@ -159,7 +160,7 @@ class DialogsMixin(AppUIProtocol):
 
         self.root.wait_window(dialog)
 
-    def _open_settings_dialog(self):
+    def _open_settings_dialog(self, on_save: Callable[[Dict, Dict], None]):
         """Opens the Settings dialog (form only)."""
         if not self.controller:
             return
@@ -185,17 +186,34 @@ class DialogsMixin(AppUIProtocol):
         theme_combo = ttk.Combobox(content, textvariable=theme_var, values=theme_values, state='readonly', width=20)
         theme_combo.grid(row=0, column=1, sticky='w', pady=(0, 8), padx=(8, 0))
 
-        # --- Port Readability Radio Buttons ---
-        readability_frame = ttk.LabelFrame(content, text="TCP Port Readability", padding=5)
-        readability_frame.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(8, 0))
+        # --- View Group ---
+        view_frame = ttk.LabelFrame(content, text="View", padding=5)
+        view_frame.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(8, 0))
 
+        # Language
+        ttk.Label(view_frame, text="Language:").grid(row=0, column=0, sticky='w', pady=(0, 8))
+        
+        # Get available languages, ensuring zh_CN is present for the demo
+        available_languages = ['System']
+        if self.main_app and self.main_app.localization_manager:
+            available_languages.extend(self.main_app.localization_manager.available_languages)
+        if 'zh_CN' not in available_languages:
+            available_languages.append('zh_CN')
+        
+        language_var = tk.StringVar(value=self.controller.config.get('language', 'System') if self.controller else 'System')
+        language_combo = ttk.Combobox(view_frame, textvariable=language_var, values=available_languages, state='readonly', width=20)
+        language_combo.grid(row=0, column=1, sticky='w', pady=(0, 8), padx=(8, 0))
+
+        # Port Readability
+        ttk.Label(view_frame, text="TCP Port Readability:").grid(row=1, column=0, sticky='w', pady=(0, 8))
         port_readability_var = tk.StringVar(value=self.controller.config.get('tcp_port_readability', 'Numbers') if self.controller else 'Numbers')
-
-        simple_radio = ttk.Radiobutton(readability_frame, text="Simple (e.g., HTTP, FTP)", variable=port_readability_var, value="Simple")
-        simple_radio.pack(anchor='w', padx=5, pady=(2, 0))
-
-        numbers_radio = ttk.Radiobutton(readability_frame, text="Numbers (e.g., 80, 21)", variable=port_readability_var, value="Numbers")
-        numbers_radio.pack(anchor='w', padx=5, pady=(0, 4))
+        
+        readability_radios = ttk.Frame(view_frame)
+        readability_radios.grid(row=1, column=1, sticky='w', pady=(0, 8), padx=(8, 0))
+        simple_radio = ttk.Radiobutton(readability_radios, text="Simple (e.g., HTTP, FTP)", variable=port_readability_var, value="Simple")
+        simple_radio.pack(anchor='w')
+        numbers_radio = ttk.Radiobutton(readability_radios, text="Numbers (e.g., 80, 21)", variable=port_readability_var, value="Numbers")
+        numbers_radio.pack(anchor='w')
 
         # Buttons
         btns = ttk.Frame(content)
@@ -204,12 +222,19 @@ class DialogsMixin(AppUIProtocol):
         def save_settings():
             if not self.controller:
                 return
-            new_config = self.controller.config.copy()
+
+            old_config = self.controller.config.copy()
+            new_config = old_config.copy()
             new_config['ui_theme'] = theme_var.get()
             new_config['tcp_port_readability'] = port_readability_var.get()
+            new_config['language'] = language_var.get()
+            
             self.controller.update_config(new_config)
             
-            # Trigger a UI refresh to apply settings live
+            if on_save:
+                on_save(old_config, new_config)
+
+            # Trigger a UI refresh to apply other settings live
             self.refresh_ui_for_settings_change()
             
             dialog.destroy()
