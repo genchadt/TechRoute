@@ -101,7 +101,7 @@ class AppUI(
         self._ = translator
         
         # Preserve the current targets if they exist
-        current_targets = self.controller.get_all_statuses() if self.controller else []
+        current_targets = self.controller.get_all_targets_with_status() if self.controller else []
 
         # Destroy old widgets
         self.main_frame.destroy()
@@ -133,6 +133,7 @@ class AppUI(
         self.setup_status_display([])
         self.root.update_idletasks()
         self.shrink_to_fit()
+        self._periodic_network_update()
 
     def _setup_ui_base(self):
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
@@ -358,6 +359,12 @@ class AppUI(
     def refresh_ui_for_settings_change(self) -> None:
         if not self.controller: return
         pass
+
+    def _periodic_network_update(self):
+        """Periodically checks for network updates from the controller."""
+        if self.controller:
+            self.controller.process_network_updates()
+        self.root.after(250, self._periodic_network_update)
 
     def update_network_info(self, info: Dict[str, Any]) -> None:
         self.network_info_panel.update_info(info)

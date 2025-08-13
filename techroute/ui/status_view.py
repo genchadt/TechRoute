@@ -77,9 +77,11 @@ class StatusViewMixin(AppUIProtocol):
 
         # Create placeholders for all potential ports
         port_widgets = {}
+        udp_widgets = {}
         readability = self.controller.config.get('tcp_port_readability', 'Numbers')
         service_map = self.controller.config.get('port_service_map', {})
         all_tcp_ports = self.controller.parser.default_ports
+        
         for port in all_tcp_ports:
             display_text = str(port)
             if readability == 'Simple':
@@ -88,18 +90,21 @@ class StatusViewMixin(AppUIProtocol):
             port_button.pack(side=tk.LEFT, padx=2)
             port_widgets[str(port)] = port_button
 
-        udp_widgets = {}
-        udp_service_registry = get_udp_service_registry()
-        if udp_service_registry:
+        if self.controller and self.controller.service_checker.checkers:
             # Add a separator if there are also TCP ports
             if all_tcp_ports:
                 sep = ttk.Separator(port_frame, orient=tk.VERTICAL)
                 sep.pack(side=tk.LEFT, padx=5, fill=tk.Y)
 
-            for port, (svc_name, _) in udp_service_registry.items():
-                udp_btn = create_indicator_button(port_frame, svc_name, False, is_placeholder=True)
+            # Sort checkers in desired order: mDNS, SNMP, WS-Discovery, SLP
+            sorted_checkers = sorted(
+                self.controller.service_checker.checkers,
+                key=lambda c: ["mDNS", "SNMP", "WS-Discovery", "SLP"].index(c.name)
+            )
+            for checker in sorted_checkers:
+                udp_btn = create_indicator_button(port_frame, checker.name, False, is_placeholder=True, is_udp=True)
                 udp_btn.pack(side=tk.LEFT, padx=2)
-                udp_widgets[svc_name] = udp_btn
+                udp_widgets[checker.name] = udp_btn
 
         self.status_widgets[original_string] = {
             "row_frame": row_frame,
@@ -169,10 +174,14 @@ class StatusViewMixin(AppUIProtocol):
                         )
 
         # Update UDP Service Buttons
-        if udp_service_statuses:
-            for svc_name, svc_status in udp_service_statuses.items():
+        if udp_service_statuses and self.controller:
+            for checker in self.controller.service_checker.checkers:
+                svc_name = checker.name
                 udp_btn = widgets['udp_widgets'].get(svc_name)
                 if udp_btn:
-                    is_open = (svc_status == "Open")
-                    color = "#2196F3" if is_open else "#FF9800"
-                    udp_btn.config(bg=color, state=tk.NORMAL)
+                    svc_status = udp_service_statuses.get(svc_name)
+                    if svc_status:
+                        is_open = (svc_status == "Open")
+                        udp_btn.config(bg="#2196F3" if is_open else "#FF9800", state=tk.NORMAL)
+                    else:
+                        udp_btn.config(bg="gray", state=tk.DISABLED)

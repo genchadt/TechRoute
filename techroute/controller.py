@@ -6,16 +6,25 @@ import json
 import os
 import threading
 import time
+import logging
+from queue import Queue, Empty
 from typing import Dict, Any, List, Optional, Callable, TYPE_CHECKING
 
 from . import configuration
-from .network import find_browser_command, get_network_info, open_browser_with_url
+from .network import find_browser_command, get_network_info, open_browser_with_url, clear_network_info_cache
 from .parsing import TargetParser
 from .ping_manager import PingManager, PingState
+from .checkers.base import ServiceCheckManager
+from .checkers.mdns import MDNSChecker
+from .checkers.slp import SLPChecker
+from .checkers.wsdiscovery import WSDiscoveryChecker
+from .checkers.snmp_checker import SNMPChecker
 
 if TYPE_CHECKING:
     from .ui.app_ui import AppUI
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class TechRouteController:
     """Manages application state, network operations, and configuration."""
@@ -43,11 +52,16 @@ class TechRouteController:
         self.on_ping_stop = None
         self.on_ping_update = None
 
-        # Default TCP ports for parser come from config; UDP handled separately
         tcp_ports = self.config.get('default_ports_to_check', configuration.TCP_PORTS)
         self.parser = TargetParser(default_ports=list(dict.fromkeys(tcp_ports)))
 
         self._load_port_service_mappings()
+
+        # Initialize service checkers
+        self.service_checker = ServiceCheckManager(
+            checkers=[MDNSChecker(), SLPChecker(), WSDiscoveryChecker(), SNMPChecker()],
+            cache_ttl=self.config.get("service_check_cache_ttl_seconds", 600)
+        )
 
         self.ping_manager = PingManager(
             app_config=self.config,
@@ -63,8 +77,10 @@ class TechRouteController:
         self.browser_command = find_browser_command(self.config.get('browser_preferences', []))
         self.on_status_update = on_status_update
         self.on_network_info_update = on_network_info_update
+        self.network_info_queue: Queue[Dict[str, Any]] = Queue()
 
-        threading.Thread(target=self._background_fetch_network_info, daemon=True).start()
+        self._network_thread_stop_event = threading.Event()
+        threading.Thread(target=self._background_network_monitor, daemon=True).start()
 
     def set_ui(self, ui: AppUI):
         """Links the UI to the controller after initialization."""
@@ -78,14 +94,30 @@ class TechRouteController:
             with open(mappings_path, 'r') as f:
                 self.config['port_service_map'] = json.load(f)
         except (IOError, json.JSONDecodeError) as e:
-            print(f"Warning: Could not load port service mappings. {e}")
+            logging.warning(f"Could not load port service mappings: {e}")
             self.config['port_service_map'] = {}
 
-    def _background_fetch_network_info(self):
-        """Fetches network info and updates the UI via callback."""
-        info = get_network_info()
-        self.network_info = info or {}
-        self.on_network_info_update(self.network_info)
+    def _background_network_monitor(self):
+        """
+        Periodically fetches network info and puts it in a queue for the main thread.
+        """
+        retry_interval = 5  # seconds
+        while not self._network_thread_stop_event.is_set():
+            clear_network_info_cache()  # Ensure fresh data
+            info = get_network_info()
+            
+            if info and info.get("primary_ipv4"):
+                self.network_info_queue.put(info)
+                self._network_thread_stop_event.wait(60)
+            else:
+                logging.error("Failed to retrieve network info. Retrying in %d seconds.", retry_interval)
+                self.network_info_queue.put({"error": "Detecting network..."})
+                self._network_thread_stop_event.wait(retry_interval)
+
+    def shutdown(self):
+        """Shuts down background threads."""
+        self._network_thread_stop_event.set()
+        self.ping_manager.stop()
 
     def get_browser_name(self) -> str:
         """Returns the name of the detected browser or a default."""
@@ -103,10 +135,15 @@ class TechRouteController:
         """Returns all current targets with their last known status."""
         return self.ping_manager.get_all_targets_with_status()
 
-    def get_all_statuses(self) -> List[Dict[str, Any]]:
-        """DEPRECATED: Returns all current targets with their last known status."""
-        return self.ping_manager.get_all_targets_with_status()
-        
+    def process_network_updates(self):
+        """Processes network info updates from the queue."""
+        try:
+            info = self.network_info_queue.get_nowait()
+            self.network_info = info
+            self.on_network_info_update(info)
+        except Empty:
+            pass
+
     def get_state(self) -> PingState:
         """Returns the current pinging state from the manager."""
         return self.ping_manager.state
@@ -114,7 +151,6 @@ class TechRouteController:
     def update_config(self, new_config: Dict[str, Any]) -> None:
         """Updates the application's config, refreshes derived state, and saves it."""
         self.config = new_config
-        # Refresh default TCP ports used by the parser
         tcp_ports = new_config.get('default_ports_to_check', configuration.TCP_PORTS)
         self.parser.default_ports = list(dict.fromkeys(tcp_ports))
         configuration.save_config(self.config)
@@ -122,19 +158,15 @@ class TechRouteController:
     def process_queue(self):
         """Processes messages from the ping manager's queue and updates state."""
         messages = self.ping_manager.process_queue()
-        if messages:  # Only update if there are actual messages
+        if messages:
             for message in messages:
-                # Process web UI targets
                 original_string, _, _, port_statuses, _, web_port_open, _ = message
                 if web_port_open:
                     host = self.parser.extract_host(original_string)
                     if original_string not in self.web_ui_targets:
-                        protocol = "https"
-                        if any(p in [80, 8080] for p in (port_statuses or {})):
-                            protocol = "http"
+                        protocol = "https" if any(p in [443, 8443] for p in (port_statuses or {})) else "http"
                         self.web_ui_targets[original_string] = {'host': host, 'protocol': protocol}
             
-            # Trigger UI update for each message
             for message in messages:
                 self.on_status_update(message)
 
@@ -148,7 +180,7 @@ class TechRouteController:
     def start_ping_process(self, ip_string: str, polling_rate_ms: int):
         """Validates IPs and starts the pinging process via the manager."""
         if not ip_string.strip():
-            print("Error: No targets provided.")
+            logging.error("No targets provided.")
             return
 
         try:
@@ -165,7 +197,6 @@ class TechRouteController:
     def stop_ping_process(self):
         """Stops the active pinging process via the manager."""
         self.ping_manager.stop()
-
 
     def launch_all_web_uis(self):
         """Launches web UIs for all targets with open web ports."""

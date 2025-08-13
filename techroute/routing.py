@@ -31,16 +31,35 @@ def _get_windows_gateway() -> Optional[str]:
 
 def _get_linux_gateway() -> Optional[str]:
     """
-    Parses 'ip route' output to find the default gateway on Linux.
+    Finds the default gateway on Linux using several command-line tools for robustness.
     """
+    # 1. Try `ip route`
     try:
         output = subprocess.check_output(["ip", "route"], text=True, stderr=subprocess.PIPE)
-        # Look for the 'default via' line
         match = re.search(r"default via ([\d\.]+)", output)
         if match:
             return match.group(1)
-    except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
-        return None
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass  # Command failed, try the next one
+
+    # 2. Fallback to `route -n`
+    try:
+        output = subprocess.check_output(["route", "-n"], text=True, stderr=subprocess.PIPE)
+        match = re.search(r"^0\.0\.0\.0\s+([\d\.]+)\s+0\.0\.0\.0\s+UG", output, re.MULTILINE)
+        if match:
+            return match.group(1)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    # 3. Fallback to `netstat -nr`
+    try:
+        output = subprocess.check_output(["netstat", "-nr"], text=True, stderr=subprocess.PIPE)
+        match = re.search(r"^0\.0\.0\.0\s+([\d\.]+)\s+0\.0\.0\.0\s+UG", output, re.MULTILINE)
+        if match:
+            return match.group(1)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
     return None
 
 def _get_macos_gateway() -> Optional[str]:

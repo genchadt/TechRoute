@@ -32,12 +32,15 @@ class AppUIProtocol(Protocol):
     def update_status_bar(self, message: str) -> None: ...
     def _open_settings_dialog(self, on_save: Callable[[Dict, Dict], None]) -> None: ...
 
-def create_indicator_button(parent: tk.Widget, text: str, is_open: bool = False, is_placeholder: bool = False) -> tk.Button:
+def create_indicator_button(parent: tk.Widget, text: str, is_open: bool = False, is_placeholder: bool = False, is_udp: bool = False) -> tk.Button:
     """Creates a standardized indicator button."""
     if is_placeholder:
         color = "#9E9E9E"  # Standard grey for placeholders
     else:
-        color = "#4CAF50" if is_open else "#F44336"
+        if is_udp:
+            color = "#2196F3" if is_open else "#FF9800"  # Blue/Orange for UDP
+        else:
+            color = "#4CAF50" if is_open else "#F44336"  # Green/Red for TCP
         
     return tk.Button(
         parent,
