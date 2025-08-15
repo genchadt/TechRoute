@@ -54,16 +54,28 @@ Key Components:
 
 ### 4. UI Components (techroute/ui/)
 #### app_ui.py
-- Main application window
-- Handles theme/language settings
+- Main application window, composed from mixins (`MenuMixin`, `DialogsMixin`, `AnimationsMixin`, `StatusViewMixin`).
+- Implements the `AppUIProtocol` to ensure a consistent interface for all UI parts.
+- Handles theme/language settings and orchestrates the main UI layout.
+- Manages child widgets from the `techroute/ui/widgets/` directory.
 
 #### status_view.py
-- Displays target status information
-- Shows ping results and port statuses
+- Displays target status information in a scrollable view.
+- Shows ping results, port statuses, and service discovery results.
 
 Key Functions:
-- `update_target_row()` - Updates UI for a target
-- `_create_target_row()` - Creates status widgets
+- `update_target_row()` - Updates the UI for a specific target.
+- `_create_target_row()` - Creates the initial set of widgets for a new target.
+
+#### types.py
+- Contains shared UI-related typing information.
+- Defines `AppUIProtocol`, a formal interface that UI mixins and components rely on to interact with the main `AppUI` class. This is critical for ensuring components are implemented correctly.
+
+#### widgets/
+- A directory for reusable, self-contained UI widgets.
+- `StatusBar`: The bar at the bottom of the window for status messages and the animated activity indicator.
+- `NetworkInfoPanel`: Displays local network information like IP address and gateway.
+- `TargetInputPanel`: Contains the text area for target input and primary action buttons like "Start Pinging".
 
 ### 5. Configuration (techroute/configuration.py)
 - Manages application settings

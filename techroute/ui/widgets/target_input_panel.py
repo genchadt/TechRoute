@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Literal
 
+
 class TargetInputPanel(ttk.Frame):
     """A frame that contains the target input field and related buttons."""
 
@@ -29,7 +30,7 @@ class TargetInputPanel(ttk.Frame):
 
         quick_row = ttk.Frame(self.input_frame)
         quick_row.pack(pady=(0, 5), fill=tk.X)
-        
+
         left_quick_frame = ttk.Frame(quick_row)
         left_quick_frame.pack(side=tk.LEFT)
         self.add_localhost_button = ttk.Button(left_quick_frame, text=self._("Add localhost"), underline=0)
@@ -42,7 +43,9 @@ class TargetInputPanel(ttk.Frame):
 
         right_quick_frame = ttk.Frame(quick_row)
         right_quick_frame.pack(side=tk.RIGHT)
-        self.clear_field_button = ttk.Button(right_quick_frame, text=self._("Clear Field"), underline=0)
+        # underline=6 targets the 'F' in "Clear Field" so the visual mnemonic
+        # matches the keyboard binding <Alt-f> defined in the main UI.
+        self.clear_field_button = ttk.Button(right_quick_frame, text=self._("Clear Field"), underline=6)
         self.clear_field_button.pack()
 
         button_frame = ttk.Frame(self.input_frame)

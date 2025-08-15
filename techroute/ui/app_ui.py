@@ -52,6 +52,7 @@ class AppUI(
         self.main_frame = ttk.Frame(self.root)
         self.status_bar = StatusBar(self.root, self._)
         self.status_indicator = self.status_bar.status_indicator
+        self.status_bar_label = self.status_bar.status_label
         self.controls_frame = ttk.Frame(self.main_frame)
         self.network_info_panel = NetworkInfoPanel(self.main_frame, self._)
         self.target_input_panel = TargetInputPanel(self.main_frame, self._)
@@ -188,7 +189,8 @@ class AppUI(
         self.ports_button = ttk.Button(left_controls_frame, text=self._("Ports..."), underline=1, command=self._open_ports_dialog)
         self.ports_button.pack(side=tk.LEFT)
         
-        self.services_button = ttk.Button(left_controls_frame, text=self._("UDP Services..."), underline=0, command=self._open_udp_services_dialog)
+        # underline=1 highlights the 'D' in "UDP Services..." so Alt-d can be used.
+        self.services_button = ttk.Button(left_controls_frame, text=self._("UDP Services..."), underline=1, command=self._open_udp_services_dialog)
         self.services_button.pack(side=tk.LEFT, padx=(8, 0))
 
         right_controls_frame = ttk.Frame(self.controls_frame)
@@ -211,7 +213,7 @@ class AppUI(
         self.root.bind("<Alt-s>", lambda event: tip.start_stop_button.invoke())
         self.root.bind("<Alt-l>", lambda event: tip.launch_all_button.invoke())
         self.root.bind("<Alt-o>", lambda e, btn=self.ports_button: btn.invoke())
-        self.root.bind("<Alt-n>", lambda e, btn=self.services_button: btn.invoke())
+        self.root.bind("<Alt-d>", lambda e, btn=self.services_button: btn.invoke())
         self.root.bind("<Alt-u>", lambda e, btn=self.update_button: btn.invoke())
         self.root.bind("<Alt-c>", lambda event: tip.clear_statuses_button.invoke())
         self.root.bind("<Alt-a>", lambda event: self._add_localhost_to_input())
