@@ -2,6 +2,7 @@
 A widget for displaying network information.
 """
 import tkinter as tk
+import time
 from tkinter import ttk
 from typing import Callable, Dict, Any, List
 
@@ -17,6 +18,15 @@ class NetworkInfoPanel(ttk.Frame):
         self._ = translator
         self.local_service_indicators: Dict[int, tk.Button] = {}
         self._local_service_ports = [20, 21, 22, 445]
+        # Cached network info for hysteresis (avoid reverting to Detecting...)
+        self._cached_network_info = {}
+        self._last_network_update = 0.0
+        # Hysteresis state for local service statuses
+        # port -> {state: 'Open'|'Closed'|'Unknown', open_streak:int, closed_streak:int}
+        self._service_state = {}
+        # Configuration for hysteresis thresholds
+        self._close_confirm_threshold = 2  # require N consecutive Closed readings before showing Closed
+        self._open_confirm_threshold = 1   # a single Open reading is enough
 
         self.network_frame = ttk.LabelFrame(self, text=self._("Network Information"), padding="10")
         self.network_frame.pack(fill=tk.X, expand=True)
@@ -126,21 +136,36 @@ class NetworkInfoPanel(ttk.Frame):
                 def _apply():
                     try:
                         from ...checkers import get_udp_service_registry
-                        udp_ports = get_udp_service_registry().keys()
-
-                        for p, status in results.items():
+                        udp_ports = set(get_udp_service_registry().keys())
+                        for p, measured_status in results.items():
                             btn = self.local_service_indicators.get(p)
-                            if not btn: continue
-                            
-                            is_open = status == "Open"
-                            
+                            if not btn:
+                                continue
+                            # Initialize hysteresis entry
+                            state_entry = self._service_state.setdefault(p, {"state": "Unknown", "open_streak": 0, "closed_streak": 0})
+                            if measured_status == "Open":
+                                state_entry["open_streak"] += 1
+                                state_entry["closed_streak"] = 0
+                                if state_entry["open_streak"] >= self._open_confirm_threshold:
+                                    state_entry["state"] = "Open"
+                            else:  # Closed reading
+                                state_entry["closed_streak"] += 1
+                                state_entry["open_streak"] = 0
+                                if state_entry["closed_streak"] >= self._close_confirm_threshold:
+                                    state_entry["state"] = "Closed"
+
+                            effective_state = state_entry["state"]
+                            if effective_state == "Unknown":
+                                # Keep placeholder color (gray-ish) until confirmed
+                                continue
+                            is_open = effective_state == "Open"
                             if p in udp_ports:
                                 color = "#2196F3" if is_open else "#FF9800"
                             else:  # TCP
                                 color = "#4CAF50" if is_open else "#F44336"
-                            
                             btn.config(bg=color, fg="white")
-                    except tk.TclError: pass
+                    except tk.TclError:
+                        pass
                 self.after(0, _apply)
             finally:
                 setattr(self, "_local_services_thread_running", False)
@@ -149,12 +174,40 @@ class NetworkInfoPanel(ttk.Frame):
         threading.Thread(target=_worker, daemon=True).start()
 
     def update_info(self, info: Dict[str, Any]) -> None:
-        """Updates the labels with new network information."""
+        """Updates labels with hysteresis: retain last good values on transient failures.
+
+        We only overwrite a field if the new value looks valid (has a digit or ':').
+        Otherwise, keep cached value to prevent flicker back to 'Detecting…'.
+        """
         try:
-            v4 = info.get("primary_ipv4") or "n/a"
-            v6 = info.get("primary_ipv6") or "n/a"
-            gw = info.get("gateway") or "n/a"
-            mask = info.get("subnet_mask") or "n/a"
+            def _is_valid(val: Any) -> bool:
+                if not val or not isinstance(val, (str, int)):
+                    return False
+                s = str(val)
+                if s.lower().startswith("detecting"):
+                    return False
+                return any(c.isdigit() for c in s)
+
+            updated = False
+            for key, label_attr, target_key in [
+                ("primary_ipv4", "netinfo_v4", "primary_ipv4"),
+                ("primary_ipv6", "netinfo_v6", "primary_ipv6"),
+                ("gateway", "netinfo_gw", "gateway"),
+                ("subnet_mask", "netinfo_mask", "subnet_mask"),
+            ]:
+                new_val = info.get(key)
+                if _is_valid(new_val):
+                    self._cached_network_info[target_key] = str(new_val)
+                    updated = True
+
+            if updated:
+                self._last_network_update = time.time()
+
+            # Apply cached (or placeholders if never set)
+            v4 = self._cached_network_info.get("primary_ipv4", "n/a")
+            v6 = self._cached_network_info.get("primary_ipv6", "n/a")
+            gw = self._cached_network_info.get("gateway", "n/a")
+            mask = self._cached_network_info.get("subnet_mask", "n/a")
             self.netinfo_v4.config(text=str(v4))
             self.netinfo_v6.config(text=str(v6))
             self.netinfo_gw.config(text=str(gw))
@@ -171,13 +224,43 @@ class NetworkInfoPanel(ttk.Frame):
         self.gateway_label.config(text=self._("Gateway:"))
         self.subnet_label.config(text=self._("Subnet Mask:"))
         self.local_services_label.config(text=self._("Local Services:"))
-        
-        # Retranslate "Detecting..." if it's currently displayed
-        if self.netinfo_v4.cget("text") != "n/a" and not any(char.isdigit() for char in self.netinfo_v4.cget("text")):
-            self.netinfo_v4.config(text=self._("Detecting…"))
-        if self.netinfo_v6.cget("text") != "n/a" and not any(char.isdigit() for char in self.netinfo_v6.cget("text")):
-            self.netinfo_v6.config(text=self._("Detecting…"))
-        if self.netinfo_gw.cget("text") != "n/a" and not any(char.isdigit() for char in self.netinfo_gw.cget("text")):
-            self.netinfo_gw.config(text=self._("Detecting…"))
-        if self.netinfo_mask.cget("text") != "n/a" and not any(char.isdigit() for char in self.netinfo_mask.cget("text")):
-            self.netinfo_mask.config(text=self._("Detecting…"))
+        # Reapply cached values (prevents regress to placeholder on language change)
+        if self._cached_network_info:
+            try:
+                self.netinfo_v4.config(text=self._cached_network_info.get("primary_ipv4", "n/a"))
+                self.netinfo_v6.config(text=self._cached_network_info.get("primary_ipv6", "n/a"))
+                self.netinfo_gw.config(text=self._cached_network_info.get("gateway", "n/a"))
+                self.netinfo_mask.config(text=self._cached_network_info.get("subnet_mask", "n/a"))
+            except tk.TclError:
+                pass
+
+    # --------------------------- Settings Refresh ---------------------------
+    def refresh_for_settings_change(self, config: Dict[str, Any]):
+        """Applies live settings adjustments without rebuilding the widget.
+
+        Currently this only needs to handle TCP port readability changes.
+        """
+        try:
+            readability = config.get('tcp_port_readability', 'Numbers')
+            service_map = config.get('port_service_map', {})
+            if not self.local_service_indicators:
+                return
+            for port in self._local_service_ports:
+                btn = self.local_service_indicators.get(port)
+                if not btn:
+                    continue
+                if readability == 'Simple':
+                    btn.config(text=service_map.get(str(port), str(port)))
+                else:
+                    btn.config(text=str(port))
+            # Re-apply cached network info (hysteresis) explicitly
+            if self._cached_network_info:
+                try:
+                    self.netinfo_v4.config(text=self._cached_network_info.get("primary_ipv4", "n/a"))
+                    self.netinfo_v6.config(text=self._cached_network_info.get("primary_ipv6", "n/a"))
+                    self.netinfo_gw.config(text=self._cached_network_info.get("gateway", "n/a"))
+                    self.netinfo_mask.config(text=self._cached_network_info.get("subnet_mask", "n/a"))
+                except tk.TclError:
+                    pass
+        except Exception:
+            pass

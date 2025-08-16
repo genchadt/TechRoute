@@ -49,6 +49,49 @@ class StatusViewMixin(AppUIProtocol):
         for target_info in targets:
             self._create_target_row(self.status_frame, target_info)
 
+    # --------------------------- Settings Refresh ---------------------------
+    def refresh_status_rows_for_settings(self):
+        """Update existing rows after settings (readability/language) changed.
+
+        Avoids discarding current status by re-deriving label/port texts.
+        """
+        if not self.controller:
+            return
+        readability = self.controller.config.get('tcp_port_readability', 'Numbers')
+        service_map = self.controller.config.get('port_service_map', {})
+
+        for original_string, widgets in self.status_widgets.items():
+            # Re-translate status text (widgets['status'] stores last raw status string)
+            # We use controller data if available to get up-to-date info.
+            # Acquire latest record from ping manager
+            latest = None
+            all_targets = self.controller.get_all_targets_with_status()
+            for t in all_targets:
+                if t.get('original_string') == original_string:
+                    latest = t
+                    break
+            if latest:
+                status = latest.get('status', widgets.get('status', ''))
+                widgets['label'].config(text=f"{self.controller.parser.extract_host(original_string)}: {status}")
+                # Update TCP port buttons readability preserving color/background
+                port_statuses = latest.get('port_statuses') or {}
+                for port, btn in widgets.get('port_widgets', {}).items():
+                    display_text = port
+                    if readability == 'Simple':
+                        display_text = service_map.get(str(port), str(port))
+                    btn.config(text=display_text)
+                # UDP services keep their names; nothing to change
+        # Also update placeholder frame (if any) translation
+        if not self.status_widgets:
+            for child in self.status_frame.winfo_children():
+                if isinstance(child, ttk.Frame):
+                    for lab in child.winfo_children():
+                        if isinstance(lab, ttk.Label):
+                            try:
+                                lab.config(text=self._("Waiting for targets..."))
+                            except Exception:
+                                pass
+
     def _create_target_row(self, parent: ttk.Frame, target_info: Dict[str, Any]):
         """Creates a single row of widgets for a target."""
         if not self.controller:

@@ -32,3 +32,9 @@ class StatusBar(ttk.Frame):
         """Retranslates the UI elements of the widget."""
         self._ = translator
         self.status_label.config(text=self._("Ready."))
+
+    # --------------------------- Settings Refresh ---------------------------
+    def refresh_for_settings_change(self):
+        """Hook for future live settings (e.g., theme) without full rebuild."""
+        # Currently nothing dynamic besides translation which uses retranslate_ui.
+        pass

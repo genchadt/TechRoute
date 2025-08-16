@@ -358,9 +358,34 @@ class AppUI(
         
         self.target_input_panel.append_line(value)
 
-    def refresh_ui_for_settings_change(self) -> None:
-        if not self.controller: return
-        pass
+    def refresh_ui(self) -> None:
+        """Apply settings (readability, theme placeholders) without losing state.
+
+        This avoids the heavy-handed full rebuild done by retranslate_ui unless
+        the language changed (handled separately by MainApp.handle_settings_change).
+        """
+        if not self.controller:
+            return
+        try:
+            cfg = self.controller.config
+            # Update network panel readability
+            if hasattr(self, 'network_info_panel') and hasattr(self.network_info_panel, 'refresh_for_settings_change'):
+                self.network_info_panel.refresh_for_settings_change(cfg)
+            # Update existing status rows (port readability, labels)
+            if hasattr(self, 'refresh_status_rows_for_settings'):
+                self.refresh_status_rows_for_settings()
+            # Widgets with potential future dynamic settings
+            if hasattr(self, 'target_input_panel'):
+                self.target_input_panel.refresh_for_settings_change()
+            if hasattr(self, 'status_bar'):
+                self.status_bar.refresh_for_settings_change()
+        except Exception:
+            # Non-fatal; we silently ignore to keep UI responsive
+            pass
+
+    # Backward compatibility alias (can be removed in future)
+    def refresh_ui_for_settings_change(self) -> None:  # pragma: no cover
+        self.refresh_ui()
 
     def _periodic_network_update(self):
         """Periodically checks for network updates from the controller."""
@@ -369,7 +394,8 @@ class AppUI(
         self.root.after(250, self._periodic_network_update)
 
     def update_network_info(self, info: Dict[str, Any]) -> None:
-        self.network_info_panel.update_info(info)
+        if hasattr(self, 'network_info_panel') and hasattr(self.network_info_panel, 'update_info'):
+            self.network_info_panel.update_info(info)
 
     def update_status_bar(self, message: str):
         self.status_bar.update_status(message)

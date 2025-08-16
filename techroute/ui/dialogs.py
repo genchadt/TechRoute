@@ -230,12 +230,18 @@ class DialogsMixin(AppUIProtocol):
             new_config['language'] = language_var.get()
             
             self.controller.update_config(new_config)
-            
+
+            language_changed = new_config.get('language') != old_config.get('language')
             if on_save:
                 on_save(old_config, new_config)
 
-            # Trigger a UI refresh to apply other settings live
-            self.refresh_ui_for_settings_change()
+            # Non-destructive live refresh for non-language changes
+            if not language_changed:
+                # Use new method name if available
+                if hasattr(self, 'refresh_ui'):
+                    self.refresh_ui()
+                else:
+                    self.refresh_ui_for_settings_change()
             
             dialog.destroy()
 

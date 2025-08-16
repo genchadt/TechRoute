@@ -89,3 +89,8 @@ class TargetInputPanel(ttk.Frame):
         self.start_stop_button.config(text=self._("Start Pinging"))
         self.launch_all_button.config(text=self._("Launch Web UIs"))
         self.clear_statuses_button.config(text=self._("Clear Statuses"))
+
+    # --------------------------- Settings Refresh ---------------------------
+    def refresh_for_settings_change(self):
+        """Placeholder for future dynamic settings (no-op for now)."""
+        pass
