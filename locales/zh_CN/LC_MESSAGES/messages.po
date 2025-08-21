@@ -1,0 +1,246 @@
+# Chinese (Simplified, China) translations for PROJECT.
+# Copyright (C) 2025 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2025.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2025-08-12 14:32-0400\n"
+"PO-Revision-Date: 2025-08-12 12:53-0400\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: zh_Hans_CN\n"
+"Language-Team: zh_Hans_CN <LL@li.org>\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.12.1\n"
+
+#: techroute/app.py:43 techroute/app.py:78
+msgid "TechRoute - Machine Service Checker"
+msgstr "TechRoute - 机器服务检查器"
+
+#: techroute/network.py:402 techroute/ui/app_ui.py:305
+msgid "Online"
+msgstr "在线"
+
+#: techroute/network.py:437
+msgid "Offline"
+msgstr "离线"
+
+#: techroute/ui/app_ui.py:104
+msgid "Ready."
+msgstr "准备就绪。"
+
+#: techroute/ui/app_ui.py:122
+msgid "Network Information"
+msgstr "网络信息"
+
+#: techroute/ui/app_ui.py:125
+msgid "IPv4:"
+msgstr "IPv4:"
+
+#: techroute/ui/app_ui.py:126 techroute/ui/app_ui.py:129
+#: techroute/ui/app_ui.py:132 techroute/ui/app_ui.py:135
+msgid "Detecting…"
+msgstr "检测中…"
+
+#: techroute/ui/app_ui.py:128
+msgid "IPv6:"
+msgstr "IPv6:"
+
+#: techroute/ui/app_ui.py:131
+msgid "Gateway:"
+msgstr "网关:"
+
+#: techroute/ui/app_ui.py:134
+msgid "Subnet Mask:"
+msgstr "子网掩码:"
+
+#: techroute/ui/app_ui.py:139
+msgid "Target Browser: Unknown"
+msgstr "目标浏览器: 未知"
+
+#: techroute/ui/app_ui.py:141
+msgid "Enter IPs or Hostnames, one per line"
+msgstr "输入IP或主机名，每行一个"
+
+#: techroute/ui/app_ui.py:158
+msgid "Status"
+msgstr "状态"
+
+#: techroute/ui/app_ui.py:182
+msgid "Polling Rate (ms):"
+msgstr "轮询率 (ms):"
+
+#: techroute/ui/app_ui.py:187
+msgid "Ports..."
+msgstr "端口..."
+
+#: techroute/ui/app_ui.py:189
+msgid "UDP Services..."
+msgstr "UDP服务..."
+
+#: techroute/ui/app_ui.py:195
+msgid "Update"
+msgstr "更新"
+
+#: techroute/ui/app_ui.py:199
+msgid "Local Services:"
+msgstr "本地服务:"
+
+#: techroute/ui/app_ui.py:238
+msgid "Add localhost"
+msgstr "添加本地主机"
+
+#: techroute/ui/app_ui.py:239
+msgid "Add Gateway"
+msgstr "添加网关"
+
+#: techroute/ui/app_ui.py:246
+msgid "Clear Field"
+msgstr "清除字段"
+
+#: techroute/ui/app_ui.py:255 techroute/ui/app_ui.py:355
+msgid "Start Pinging"
+msgstr "开始 Pinging"
+
+#: techroute/ui/app_ui.py:257
+msgid "Launch Web UIs"
+msgstr "启动 Web UI"
+
+#: techroute/ui/app_ui.py:262
+msgid "Clear Statuses"
+msgstr "清除状态"
+
+#: techroute/ui/app_ui.py:305
+msgid "FAIL"
+msgstr "失败"
+
+#: techroute/ui/app_ui.py:358
+msgid "Pinging stopped."
+msgstr "Pinging 已停止。"
+
+#: techroute/ui/app_ui.py:362
+msgid "Input Required"
+msgstr "需要输入"
+
+#: techroute/ui/app_ui.py:362
+msgid "Please enter at least one IP address or hostname."
+msgstr "请输入至少一个IP地址或主机名。"
+
+#: techroute/ui/app_ui.py:368
+msgid "Invalid Polling Rate"
+msgstr "无效的轮询率"
+
+#: techroute/ui/app_ui.py:368
+msgid "Polling rate must be a number."
+msgstr "轮询率必须是数字。"
+
+#: techroute/ui/app_ui.py:378
+msgid "Stop Pinging"
+msgstr "停止 Pinging"
+
+#: techroute/ui/app_ui.py:380
+msgid "Pinging targets..."
+msgstr "Pinging 目标..."
+
+#: techroute/ui/app_ui.py:383
+msgid "Invalid Target"
+msgstr "无效的目标"
+
+#: techroute/ui/app_ui.py:405
+msgid "Statuses cleared."
+msgstr "状态已清除。"
+
+#: techroute/ui/app_ui.py:417
+msgid "Gateway not detected."
+msgstr "未检测到网关。"
+
+#: techroute/ui/app_ui.py:421 techroute/ui/app_ui.py:458
+msgid "Input disabled while pinging."
+msgstr "Pinging 时禁用输入。"
+
+#: techroute/ui/app_ui.py:424
+msgid "Input field cleared."
+msgstr "输入字段已清除。"
+
+#: techroute/ui/menu.py:18
+msgid "File"
+msgstr "文件"
+
+#: techroute/ui/menu.py:19
+msgid "New"
+msgstr "新建"
+
+#: techroute/ui/menu.py:20
+msgid "Open..."
+msgstr "打开..."
+
+#: techroute/ui/menu.py:21
+msgid "Save List"
+msgstr "保存列表"
+
+#: techroute/ui/menu.py:22
+msgid "Save List As..."
+msgstr "列表另存为..."
+
+#: techroute/ui/menu.py:26
+msgid "Edit"
+msgstr "编辑"
+
+#: techroute/ui/menu.py:27
+msgid "Clear"
+msgstr "清除"
+
+#: techroute/ui/menu.py:31
+msgid "View"
+msgstr "视图"
+
+#: techroute/ui/menu.py:32
+msgid "Zoom In"
+msgstr "放大"
+
+#: techroute/ui/menu.py:33
+msgid "Zoom Out"
+msgstr "缩小"
+
+#: techroute/ui/menu.py:35
+msgid "Show Menubar"
+msgstr "显示菜单栏"
+
+#: techroute/ui/menu.py:36
+msgid "Show Statusbar"
+msgstr "显示状态栏"
+
+#: techroute/ui/menu.py:40
+msgid "Settings"
+msgstr "设置"
+
+#: techroute/ui/menu.py:42
+msgid "Preferences"
+msgstr "首选项"
+
+#: techroute/ui/menu.py:49
+msgid "Help"
+msgstr "帮助"
+
+#: techroute/ui/menu.py:50
+msgid "Check for Updates"
+msgstr "检查更新"
+
+#: techroute/ui/menu.py:52
+msgid "Github"
+msgstr "Github"
+
+#: techroute/ui/menu.py:53
+msgid "About"
+msgstr "关于"
+
+#~ msgid "System Default"
+#~ msgstr "系统默认"
+
+#~ msgid "Language"
+#~ msgstr "语言"
