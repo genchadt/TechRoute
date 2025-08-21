@@ -115,35 +115,34 @@ def get_network_info() -> Dict[str, Optional[str]]:
         "gateway": None,
     }
 
+    gateway = get_default_gateway()
+    info["gateway"] = gateway
+
     try:
         # Primary method: psutil
-        gateway = get_default_gateway()
         if gateway:
             addrs = psutil.net_if_addrs()
             for if_name, if_addrs in addrs.items():
-                for addr in if_addrs:
-                    if addr.family == socket.AF_INET:
-                        try:
-                            ip_net = ipaddress.ip_network(f"{addr.address}/{addr.netmask}", strict=False)
-                            if ipaddress.ip_address(gateway) in ip_net:
-                                info["primary_ipv4"] = addr.address
-                                info["subnet_mask"] = addr.netmask
-                                info["gateway"] = gateway
-                                # Also find IPv6 on the same interface
-                                for other_addr in addrs[if_name]:
-                                    if other_addr.family == socket.AF_INET6 and not other_addr.address.startswith("fe80::"):
-                                        info["primary_ipv6"] = other_addr.address
-                                        break
-                                logging.info("Network info retrieved using psutil.")
-                                _network_info_cache = info
-                                return info
-                        except (ValueError, TypeError):
-                            continue
+                # Find the interface that contains the gateway
+                if any(addr.family == socket.AF_INET and ipaddress.ip_address(gateway) in ipaddress.ip_network(f"{addr.address}/{addr.netmask}", strict=False) for addr in if_addrs if addr.family == socket.AF_INET and addr.netmask):
+                    # Now get all IPs for that interface
+                    for addr in if_addrs:
+                        if addr.family == socket.AF_INET:
+                            info["primary_ipv4"] = addr.address
+                            info["subnet_mask"] = addr.netmask
+                        elif addr.family == socket.AF_INET6 and not addr.address.startswith("fe80::"):
+                            info["primary_ipv6"] = addr.address
+                    
+                    if info["primary_ipv4"]:
+                        logging.info(f"Network info for interface '{if_name}' retrieved using psutil.")
+                        _network_info_cache = info
+                        return info
     except Exception as e:
         logging.warning(f"Could not retrieve network info using psutil: {e}. Trying fallbacks.")
 
-    # Fallback for Linux
-    if psutil.LINUX:
+    # Fallback for Linux if psutil fails to find an IP
+    if psutil.LINUX and not info["primary_ipv4"]:
+        logging.info("psutil failed to find network info. Attempting Linux command-line fallback.")
         linux_info = _get_network_info_linux()
         if linux_info["primary_ipv4"]:
             _network_info_cache = linux_info
