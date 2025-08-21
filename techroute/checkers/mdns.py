@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import Optional, Iterable, Any, cast
+from typing import Optional, Iterable, Any, cast, Dict
 import platform
 import struct
 import socket
 import threading
+import time
+import logging
 
 from .base import BaseChecker, CheckResult
 
@@ -48,195 +50,200 @@ class _AnyServiceListener(ServiceListener):
         pass
 
 
+class _MDNSMonitor:
+    """Persistent, shared Zeroconf browser that records recent mDNS activity.
+
+    We treat *any* service add/update callback on the meta-service browser
+    as proof that mDNS traffic is flowing on the link. This avoids creating
+    a Zeroconf instance for every availability probe and dramatically
+    reduces flapping caused by narrow observation windows.
+    """
+
+    _FRESHNESS_WINDOW = 60.0  # Seconds since last event to consider 'fresh'
+    _STALE_ACTIVE_PROBE_INTERVAL = 120.0  # How often (s) we allow an active probe when stale
+    _GRACE_AFTER_SUCCESS = 300.0  # Still report available (optimistic) within this after last success unless explicit failures
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._last_event: float = 0.0
+        self._last_success_return: float = 0.0  # last time we actually returned available
+        self._last_active_probe: float = 0.0
+        self._zc: Any = None
+        self._started = False
+        self._active_probe_failures: int = 0
+        self._logger = logging.getLogger("techroute.mdns")
+        self._logger.addHandler(logging.NullHandler())
+
+    def _ensure_started(self) -> None:
+        if self._started:
+            return
+        if Zeroconf is None or ServiceBrowser is None:
+            return
+        try:
+            ZC = cast(Any, Zeroconf)
+            self._zc = ZC()  # Single shared instance
+            listener = self._Listener(self)
+            SB = cast(Any, ServiceBrowser)
+            SB(self._zc, "_services._dns-sd._udp.local.", listener)
+            self._started = True
+            self._logger.debug("Started persistent Zeroconf mDNS monitor")
+        except Exception as e:  # pragma: no cover - startup edge
+            self._zc = None
+            self._logger.debug("Failed to start Zeroconf monitor: %s", e)
+
+    class _Listener(ServiceListener):  # type: ignore[misc]
+        def __init__(self, outer: '_MDNSMonitor') -> None:  # noqa: F821
+            super().__init__()
+            self._outer = outer
+
+        def add_service(self, *args, **kwargs) -> None:  # pragma: no cover - callback
+            self._mark()
+        def update_service(self, *args, **kwargs) -> None:  # pragma: no cover - callback
+            self._mark()
+        def _mark(self) -> None:
+            with self._outer._lock:
+                self._outer._last_event = time.monotonic()
+                self._outer._active_probe_failures = 0
+
+    # Active probe (unicast PTR query) only when stale, to gently re-confirm
+    def _active_probe(self, timeout: float) -> bool:
+        now = time.monotonic()
+        if (now - self._last_active_probe) < self._STALE_ACTIVE_PROBE_INTERVAL:
+            return False
+        self._last_active_probe = now
+        try:
+            return self._send_qu_ptr(timeout)
+        except Exception as e:  # pragma: no cover - diagnostics
+            self._logger.debug("Active mDNS probe error: %s", e)
+            return False
+
+    def _send_qu_ptr(self, timeout: float) -> bool:
+        from .base import udp_send_receive
+
+        def _enc_qname(name: str) -> bytes:
+            out = bytearray()
+            for part in [p for p in name.strip('.').split('.') if p]:
+                b = part.encode('utf-8')
+                out.append(len(b))
+                out.extend(b)
+            out.append(0)
+            return bytes(out)
+
+        header = struct.pack(">HHHHHH", 0, 0x0000, 1, 0, 0, 0)
+        question = _enc_qname("_services._dns-sd._udp.local.") + struct.pack(">HH", 12, 0x8001)
+        payload = header + question
+        # IPv4 first
+        res_v4 = udp_send_receive("224.0.0.251", 5353, payload, timeout=timeout, family=socket.AF_INET)
+        if res_v4.available:
+            with self._lock:
+                self._last_event = time.monotonic()
+            return True
+        # IPv6 (best effort)
+        if platform.system().lower() == 'linux':
+            try:
+                ifaces: Iterable[tuple[int, str]] = socket.if_nameindex()
+            except OSError:
+                ifaces = []
+            for _, name in ifaces:
+                addr = f"ff02::fb%{name}"
+                res_v6 = udp_send_receive(addr, 5353, payload, timeout=timeout, family=socket.AF_INET6)
+                if res_v6.available:
+                    with self._lock:
+                        self._last_event = time.monotonic()
+                    return True
+        return False
+
+    def availability_snapshot(self) -> Dict[str, Any]:
+        now = time.monotonic()
+        with self._lock:
+            last_event = self._last_event
+            last_success = self._last_success_return
+        age = now - last_event if last_event else float('inf')
+        return {
+            "last_event_age_sec": age,
+            "had_success": last_success > 0.0,
+        }
+
+    def is_available(self, timeout: float) -> CheckResult:
+        self._ensure_started()
+        now = time.monotonic()
+        with self._lock:
+            last_event = self._last_event
+            last_success = self._last_success_return
+
+        # Fast path: fresh passive event
+        if last_event and (now - last_event) <= self._FRESHNESS_WINDOW:
+            with self._lock:
+                self._last_success_return = now
+            return CheckResult(True, info={"method": "passive", "age": now - last_event})
+
+        # If we had past success, remain optimistic within grace while we try an active probe occasionally
+        optimistic_window = (last_success > 0.0) and ((now - last_success) <= self._GRACE_AFTER_SUCCESS)
+
+        did_probe = False
+        if self._active_probe(timeout):
+            did_probe = True
+            with self._lock:
+                self._last_success_return = now
+            return CheckResult(True, info={"method": "active-probe", "age": now - self._last_event})
+
+        if optimistic_window:
+            # Still report available, but include stale flag
+            return CheckResult(True, info={"method": "stale-passive", "stale": True, "age": (now - last_event) if last_event else None})
+
+        # Linux: try Avahi as a last resort before declaring failure
+        avahi_res = MDNSChecker._avahi_dbus_check_static()
+        if avahi_res is not None and avahi_res.available:
+            with self._lock:
+                self._last_success_return = now
+                if self._last_event == 0.0:
+                    self._last_event = now  # Seed
+            return avahi_res
+
+        return CheckResult(False, info={"method": "none", "probe_attempted": did_probe})
+
+
+_monitor: Optional[_MDNSMonitor] = None
+
+
+def _get_monitor() -> _MDNSMonitor:
+    global _monitor
+    if _monitor is None:
+        _monitor = _MDNSMonitor()
+    return _monitor
+
+
 class MDNSChecker(BaseChecker):
-    """mDNS/Bonjour availability via zeroconf (UDP/5353)."""
+    """mDNS/Bonjour availability via persistent monitoring + light active probes.
+
+    The `host` parameter is ignored (mDNS is link-scope); we retain it to satisfy
+    the BaseChecker protocol.
+    """
 
     name = "mDNS"
     port = 5353
 
-    def _avahi_dbus_check(self) -> CheckResult | None:
-        """Lightweight Avahi health check via D-Bus on Linux, if dbus-python is installed."""
+    @staticmethod
+    def _avahi_dbus_check_static() -> CheckResult | None:
         if dbus is None or platform.system().lower() != "linux":
             return None
         try:
-            bus = dbus.SystemBus()
-            server_obj = bus.get_object("org.freedesktop.Avahi", "/")
-            server = dbus.Interface(server_obj, "org.freedesktop.Avahi.Server")
-            # These calls succeed only if Avahi is reachable/running.
-            _ = server.GetVersionString()
-            state = int(server.GetState())
-            # Accept RUNNING(2) primarily; other non-failure states also indicate availability.
-            if state == 2:
-                return CheckResult(True, info={"method": "avahi-dbus", "state": state})
+            bus = dbus.SystemBus()  # type: ignore[assignment]
+            server_obj = bus.get_object("org.freedesktop.Avahi", "/")  # type: ignore[attr-defined]
+            server = dbus.Interface(server_obj, "org.freedesktop.Avahi.Server")  # type: ignore[attr-defined]
+            _ = server.GetVersionString()  # type: ignore[attr-defined]
+            state = int(server.GetState())  # type: ignore[attr-defined]
             return CheckResult(True, info={"method": "avahi-dbus", "state": state})
-        except Exception as e:
+        except Exception as e:  # pragma: no cover - system integration
             return CheckResult(False, error=f"Avahi D-Bus: {e}")
 
-    def check(self, host: str, timeout: float = 1.5) -> CheckResult:
-        sys_is_linux = platform.system().lower() == "linux"
-        # Give Linux a bit more breathing room for multicast callback delivery
-        effective_timeout = max(timeout, 3.0) if sys_is_linux else timeout
+    # Backwards-compatible instance method for any older references
+    def _avahi_dbus_check(self) -> CheckResult | None:  # pragma: no cover - delegate
+        return self._avahi_dbus_check_static()
 
-        # Primary: zeroconf browse on meta-service, IPv4 first then IPv6 on Linux
-        if Zeroconf is not None and ServiceBrowser is not None:
-            browse_modes = ["v4"] + (["v6"] if sys_is_linux else [])
-            for mode in browse_modes:
-                try:
-                    zc_kwargs: dict[str, Any] = {}
-                    if IPVersion is not None:
-                        try:
-                            zc_kwargs["ip_version"] = IPVersion.V4Only if mode == "v4" else IPVersion.V6Only  # type: ignore[attr-defined]
-                        except Exception:
-                            pass
+    def check(self, host: str, timeout: float = 1.5) -> CheckResult:  # noqa: D401
+        # timeout influences active probe upper bound; we internally cap / extend as needed
+        bounded = max(0.5, min(timeout, 5.0))
+        mon = _get_monitor()
+        return mon.is_available(timeout=bounded)
 
-                    event = threading.Event()
-                    listener = _AnyServiceListener(event)
-
-                    ZC = cast(Any, Zeroconf)
-                    zc = ZC(**zc_kwargs)
-                    try:
-                        SB = cast(Any, ServiceBrowser)
-                        # Prefer listener-style for broad compatibility across zeroconf versions
-                        SB(zc, "_services._dns-sd._udp.local.", listener)
-                        if event.wait(timeout=effective_timeout):
-                            return CheckResult(True, info={"method": "zeroconf", "ip_version": mode})
-                    finally:
-                        try:
-                            zc.close()
-                        except Exception:
-                            pass
-                except Exception:
-                    # Try next mode or fallback
-                    pass
-
-        # Linux-only: if Avahi is up via D-Bus, consider mDNS reachable
-        avahi_res = self._avahi_dbus_check()
-        if avahi_res is not None and avahi_res.available:
-            return avahi_res
-
-        # Fallback A: QU PTR query asking for unicast reply (all OS)
-        try:
-            from .base import udp_send_receive
-
-            def _enc_qname(name: str) -> bytes:
-                out = bytearray()
-                for p in [p for p in name.strip(".").split(".") if p]:
-                    b = p.encode("utf-8")
-                    out.append(len(b))
-                    out.extend(b)
-                out.append(0)
-                return bytes(out)
-
-            header = struct.pack(">HHHHHH", 0, 0x0000, 1, 0, 0, 0)
-            question = _enc_qname("_services._dns-sd._udp.local.") + struct.pack(">HH", 12, 0x8001)
-            payload = header + question
-
-            # IPv4
-            res_v4 = udp_send_receive("224.0.0.251", self.port, payload, timeout=effective_timeout, family_hint=socket.AF_INET)
-            if res_v4.available:
-                return CheckResult(True, info=res_v4.info)
-
-            # IPv6 scoped per interface (Linux)
-            if sys_is_linux:
-                try:
-                    ifaces: Iterable[tuple[int, str]] = socket.if_nameindex()
-                except OSError:
-                    ifaces = []
-                for idx, name in ifaces:
-                    addr = f"ff02::fb%{name}"
-                    res_v6 = udp_send_receive(addr, self.port, payload, timeout=effective_timeout, family_hint=socket.AF_INET6)
-                    if res_v6.available:
-                        return CheckResult(True, info=res_v6.info)
-        except Exception as e:
-            return CheckResult(False, error=str(e))
-
-        # Linux-only multicast listen fallback retained as last resort
-        if sys_is_linux:
-            def _multicast_query() -> bytes:
-                header = struct.pack(">HHHHHH", 0, 0x0000, 1, 0, 0, 0)
-                name = "_services._dns-sd._udp.local."
-                out = bytearray()
-                for p in [p for p in name.strip(".").split(".") if p]:
-                    b = p.encode("utf-8")
-                    out.append(len(b))
-                    out.extend(b)
-                out.append(0)
-                question = bytes(out) + struct.pack(">HH", 12, 0x0001)
-                return header + question
-
-            query = _multicast_query()
-
-            # IPv4 listen
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as s4:
-                    s4.settimeout(effective_timeout)
-                    try:
-                        s4.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    except OSError:
-                        pass
-                    try:
-                        s4.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_REUSEPORT", 15), 1)
-                    except OSError:
-                        pass
-                    try:
-                        s4.bind(("0.0.0.0", self.port))
-                        mreq = socket.inet_aton("224.0.0.251") + socket.inet_aton("0.0.0.0")
-                        s4.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-                        try:
-                            s4.sendto(query, ("224.0.0.251", self.port))
-                        except OSError:
-                            pass
-                        try:
-                            data, addr = s4.recvfrom(2048)
-                            if data:
-                                return CheckResult(True, info={"from": addr, "bytes": len(data)})
-                        except socket.timeout:
-                            pass
-                    except OSError:
-                        pass
-            except OSError:
-                pass
-
-            # IPv6 listen
-            try:
-                with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as s6:
-                    s6.settimeout(effective_timeout)
-                    try:
-                        s6.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    except OSError:
-                        pass
-                    try:
-                        s6.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_REUSEPORT", 15), 1)
-                    except OSError:
-                        pass
-                    try:
-                        s6.bind(("::", self.port))
-                    except OSError:
-                        s6 = None  # type: ignore
-                    if s6 is not None:
-                        try:
-                            ifaces: Iterable[tuple[int, str]] = socket.if_nameindex()
-                        except OSError:
-                            ifaces = []
-                        group = socket.inet_pton(socket.AF_INET6, "ff02::fb")
-                        for idx, name in ifaces:
-                            try:
-                                mreq6 = group + struct.pack("@I", idx)
-                                s6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq6)
-                            except OSError:
-                                continue
-                        for idx, name in ifaces:
-                            try:
-                                s6.sendto(query, ("ff02::fb", self.port, 0, idx))
-                            except OSError:
-                                continue
-                        try:
-                            data, addr = s6.recvfrom(4096)
-                            if data:
-                                return CheckResult(True, info={"from": addr, "bytes": len(data)})
-                        except socket.timeout:
-                            pass
-            except OSError:
-                pass
-
-        return CheckResult(False)

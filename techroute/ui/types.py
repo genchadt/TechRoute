@@ -1,43 +1,45 @@
 """
-Shared typing utilities for the TechRoute UI package.
+Shared typing information for the UI layer.
 """
 from __future__ import annotations
-import tkinter as tk
+from typing import Protocol, Dict, Any, Callable, List, Optional, Tuple, TYPE_CHECKING
 from tkinter import ttk
-from typing import TypeVar, TYPE_CHECKING, Protocol, Optional, Dict, Any
+from enum import Enum, auto
+from dataclasses import dataclass
 
 if TYPE_CHECKING:
-    from .app_ui import AppUI
     from ..controller import TechRouteController
 
-AppUI_T = TypeVar("AppUI_T", bound="AppUI")
+# ------------------- Data Structures for State Transfer -------------------
 
-class AppUIProtocol(Protocol):
-    """Protocol defining the interface that mixins expect from the main UI class."""
-    root: tk.Tk
-    controller: Optional['TechRouteController']
-    status_indicator: ttk.Label
-    status_bar_label: ttk.Label
-    status_frame: ttk.LabelFrame
-    status_widgets: Dict[str, Dict[str, Any]]
-    blinking_animation_job: Optional[str]
-    ping_animation_job: Optional[str]
-    
-    def refresh_ui_for_settings_change(self) -> None: ...
-    def update_status_bar(self, message: str) -> None: ...
-    def _open_settings_dialog(self) -> None: ...
+class AppState(Enum):
+    """Defines the possible operational states of the application."""
+    IDLE = auto()
+    CHECKING = auto()
+    PINGING = auto()
+    STOPPING = auto()
 
-def create_indicator_button(parent: tk.Widget, text: str) -> tk.Button:
-    """Creates a standardized indicator button."""
-    return tk.Button(
-        parent,
-        text=text,
-        bg="gray",
-        fg="white",
-        disabledforeground="white",
-        relief="raised",
-        borderwidth=1,
-        state=tk.DISABLED,
-        padx=4,
-        pady=1,
-    )
+StatusUpdatePayload = Dict[str, Any]
+NetworkInfoPayload = Dict[str, Any]
+
+# ------------------- Protocols for Decoupling -------------------
+
+@dataclass
+class ControllerCallbacks:
+    """
+    A container for all callback functions the controller uses to communicate with the UI.
+    This ensures the controller remains UI-agnostic.
+    """
+    on_state_change: Callable[[AppState], None]
+    on_status_update: Callable[[List[StatusUpdatePayload]], None]
+    on_initial_statuses_loaded: Callable[[List[Dict[str, Any]]], None]
+    on_network_info_update: Callable[[NetworkInfoPayload], None]
+
+    def __init__(self, on_state_change: Callable[[AppState], None],
+                 on_status_update: Callable[[List[StatusUpdatePayload]], None],
+                 on_initial_statuses_loaded: Callable[[List[Dict[str, Any]]], None],
+                 on_network_info_update: Callable[[NetworkInfoPayload], None]):
+        self.on_state_change = on_state_change
+        self.on_status_update = on_status_update
+        self.on_initial_statuses_loaded = on_initial_statuses_loaded
+        self.on_network_info_update = on_network_info_update

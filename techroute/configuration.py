@@ -9,17 +9,20 @@ it creates one with default values.
 
 import sys
 import yaml
-from typing import Dict, Any
+from typing import Dict, Any, List
+
+# Define constants for ports to prevent modification
+TCP_PORTS: List[int] = [80, 443, 631]
+UDP_PORTS: List[int] = [161, 427, 3702, 5353]
 
 # This dictionary holds the default structure and values for our config.
 # It will be used to generate the initial config.yaml.
-DEFAULT_CONFIG = {
+DEFAULT_CONFIG: Dict[str, Any] = {
     'ping_interval_seconds': 3,
     'port_check_timeout_seconds': 1,
-    'default_ports_to_check': [80, 443, 631],
-    'udp_services_to_check': [161, 427, 3702, 5353],
     # UI preferences
     'ui_theme': 'System',            # Options: System, Light, Dark
+    'language': 'System',            # Options: System, or a language code like 'en', 'es', 'de'
     'tcp_port_readability': 'Numbers',   # Options: Numbers, Simple
     'window_settings': {
         'width_percentage': 110,
@@ -28,6 +31,10 @@ DEFAULT_CONFIG = {
         'total_duration_ms': 1200,
         'frame_delay_ms': 100,
     },
+    # Default TCP ports to check for web/admin services. Users can override via the UI.
+    'default_ports_to_check': list(TCP_PORTS),
+    # UDP services to probe (by well-known port). Empty by default; configurable via UI.
+    'udp_services_to_check': list(UDP_PORTS),
     # Users can edit, reorder, or remove browsers from the generated yaml.
     'browser_preferences': [
         {
