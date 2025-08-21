@@ -91,6 +91,10 @@ class AppUIProtocol(Protocol):
         """Updates a target row in the status display."""
         ...
 
+    def _on_service_indicator_click(self, target: str, port_or_service: str, is_web_port: bool) -> None:
+        """Handles clicks on any service indicator button."""
+        ...
+
     def setup_status_display(self, targets: List[Dict[str, Any]]) -> None:
         """Creates or updates status widgets for all targets."""
         ...

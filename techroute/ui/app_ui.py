@@ -185,10 +185,11 @@ class AppUI(
         self.reset_status_indicator()
 
     def launch_single_web_ui(self, original_string: str, port: Optional[int] = None):
-        """Launches the web UI for a single, specific target."""
-        if not self._show_unsecure_browser_warning():
-            return
+        """Launches the web UI for a single, specific target.
         
+        Note: This method does NOT show a security warning. The caller is
+        responsible for that.
+        """
         url = self.actions.get_web_ui_url(original_string, port)
         if url:
             open_browser_with_url(url, self.actions.get_browser_command())

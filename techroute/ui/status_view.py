@@ -3,7 +3,7 @@ Status list creation and updates for TechRoute UI.
 """
 from __future__ import annotations
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from typing import Dict, Any, List, TYPE_CHECKING, Callable, Optional
 
 from .widgets.utils import create_indicator_button
@@ -153,6 +153,26 @@ class StatusViewMixin:
         # Immediately update the row with the actual initial data
         self.update_target_row(target_info)
 
+    def _on_service_indicator_click(self: 'AppUIProtocol', target: str, port_or_service: str, is_web_port: bool):
+        """Handles clicks on any service indicator button."""
+        if is_web_port:
+            # It's a web port, show warning then potentially launch browser
+            if self._show_unsecure_browser_warning():
+                try:
+                    port = int(port_or_service)
+                    self.launch_web_ui_for_port(target, port)
+                except (ValueError, TypeError):
+                    # Should not happen if is_web_port is true
+                    pass
+        else:
+            # It's some other service, just show an info message
+            messagebox.showinfo(
+                "Service Information",
+                f"Service '{port_or_service}' is responsive on {self.actions.extract_host(target)}, "
+                "but it does not have a web interface to launch.",
+                parent=self.root
+            )
+
     def update_target_row(self: 'AppUIProtocol', target_info: Dict[str, Any]):
         """Updates a single row of widgets for a target with new data."""
         original_string = target_info['original_string']
@@ -177,9 +197,14 @@ class StatusViewMixin:
         widgets['ping_button'].config(
             text=ping_button_text, bg=color,
             state=tk.NORMAL if web_port_open else tk.DISABLED,
-            cursor="hand2" if web_port_open else "",
-            command=lambda s=original_string: self.launch_single_web_ui(s)
+            cursor="hand2" if web_port_open else ""
         )
+        if web_port_open:
+            # Default to port 80 for the main ping button, as it's the most common.
+            # The _on_service_indicator_click will handle the warning.
+            widgets['ping_button'].config(
+                command=lambda s=original_string: self._on_service_indicator_click(s, "80", is_web_port=True)
+            )
 
         # Update Main Label
         widgets['label'].config(text=f"{self.actions.extract_host(original_string)}: {status}")
@@ -196,12 +221,16 @@ class StatusViewMixin:
                     if readability == 'Simple':
                         display_text = service_map.get(str(port), str(port))
                     
-                    port_button.config(text=display_text, bg=TCP_OPEN_COLOR if is_open else TCP_CLOSED_COLOR, state=tk.NORMAL)
-                    if int(port) in [80, 443, 8080]:
+                    port_button.config(
+                        text=display_text,
+                        bg=TCP_OPEN_COLOR if is_open else TCP_CLOSED_COLOR,
+                        state=tk.NORMAL if is_open else tk.DISABLED,
+                        cursor="hand2" if is_open else ""
+                    )
+                    is_web_port = int(port) in [80, 443, 8080]
+                    if is_open:
                         port_button.config(
-                            state=tk.NORMAL if is_open else tk.DISABLED,
-                            cursor="hand2" if is_open else "",
-                            command=lambda s=original_string, p=int(port): self.launch_web_ui_for_port(s, p)
+                            command=lambda s=original_string, p=port, web=is_web_port: self._on_service_indicator_click(s, p, web)
                         )
 
         # Update UDP Service Buttons
@@ -213,7 +242,14 @@ class StatusViewMixin:
                     svc_status = udp_service_statuses.get(svc_name)
                     if svc_status:
                         is_open = (svc_status == "Open")
-                        # Use a different color scheme for UDP services
-                        udp_btn.config(bg=UDP_OPEN_COLOR if is_open else UDP_CLOSED_COLOR, state=tk.NORMAL)
+                        udp_btn.config(
+                            bg=UDP_OPEN_COLOR if is_open else UDP_CLOSED_COLOR,
+                            state=tk.NORMAL if is_open else tk.DISABLED,
+                            cursor="hand2" if is_open else ""
+                        )
+                        if is_open:
+                            udp_btn.config(
+                                command=lambda s=original_string, svc=svc_name: self._on_service_indicator_click(s, svc, is_web_port=False)
+                            )
                     else:
                         udp_btn.config(bg=DEFAULT_INDICATOR_COLOR, state=tk.DISABLED)
