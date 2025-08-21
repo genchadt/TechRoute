@@ -21,7 +21,15 @@ class DialogsMixin:
     # The `ui` attribute was incorrect.
     root: tk.Tk
     controller: "TechRouteController"
-    refresh_ui: Callable[[], None]
+
+    def refresh_ui(self) -> None:
+        """
+        This method is expected to be implemented by the class using this mixin.
+        It should handle refreshing the UI after settings changes.
+        """
+        raise NotImplementedError(
+            "Classes using DialogsMixin must implement the refresh_ui method."
+        )
 
     def _set_dialog_icon(self, dialog: tk.Toplevel):
         """Sets the icon for a dialog window."""
@@ -48,12 +56,13 @@ class DialogsMixin:
         message = (
             "You are about to open a web browser instance directly from this application. "
             "This browser instance is intended for accessing device configuration pages and "
-            "is NOT a secure, fully-featured browser.\\n\\n"
+            "is NOT a secure, fully-featured browser.\n\n"
             "Please DO NOT use it for general web browsing, logging into accounts, "
-            "or handling sensitive data.\\n\\n"
+            "or handling sensitive data.\n\n"
             "Do you want to continue?"
         )
-        return messagebox.askokcancel(title, message, parent=self.root)
+        # Use the warning icon to make the dialog more pressing on all platforms.
+        return messagebox.askokcancel(title, message, parent=self.root, icon='warning')
 
     def _center_dialog(self, dialog: tk.Toplevel, width: int, height: int):
         """Centers the dialog on the main window."""
