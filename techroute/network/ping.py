@@ -6,6 +6,8 @@ import platform
 import queue
 import re
 import socket
+import struct
+import select
 import subprocess
 import threading
 import time
@@ -13,6 +15,76 @@ import random
 from functools import lru_cache
 import ipaddress
 from typing import Dict, Any, List, Optional, Tuple, cast, Callable
+from dataclasses import dataclass
+
+from ..models import StatusUpdate
+
+@dataclass
+class ICMPPacket:
+    type: int
+    code: int
+    checksum: int
+    identifier: int
+    sequence: int
+    payload: bytes
+
+    def pack(self) -> bytes:
+        header = struct.pack('!BBHHH', self.type, self.code, 0, self.identifier, self.sequence)
+        checksum = self._calculate_checksum(header + self.payload)
+        header = struct.pack('!BBHHH', self.type, self.code, checksum, self.identifier, self.sequence)
+        return header + self.payload
+
+    @staticmethod
+    def _calculate_checksum(data: bytes) -> int:
+        if len(data) % 2:
+            data += b'\x00'
+        res = sum(struct.unpack('!%dH' % (len(data) // 2), data))
+        res = (res >> 16) + (res & 0xffff)
+        res += res >> 16
+        return ~res & 0xffff
+
+class ICMPPinger:
+    """Handles ICMP echo requests using raw sockets."""
+    
+    def __init__(self, timeout: float = 1.0):
+        self.timeout = timeout
+        self.sequence = random.randint(0, 0xffff)
+        self.identifier = random.randint(0, 0xffff)
+        
+    def ping(self, host: str) -> Tuple[bool, float]:
+        """Send ICMP echo request and measure round-trip time."""
+        try:
+            is_ipv6 = ':' in host
+            sock_type = socket.AF_INET6 if is_ipv6 else socket.AF_INET
+            sock_proto = socket.IPPROTO_ICMPV6 if is_ipv6 else socket.IPPROTO_ICMP
+            
+            with socket.socket(sock_type, socket.SOCK_RAW, sock_proto) as sock:
+                sock.settimeout(self.timeout)
+                
+                # Create ICMP packet
+                packet = ICMPPacket(
+                    type=128 if is_ipv6 else 8,  # Echo request
+                    code=0,
+                    checksum=0,
+                    identifier=self.identifier,
+                    sequence=self.sequence,
+                    payload=struct.pack('d', time.time())
+                )
+                
+                # Send packet
+                dest_addr = host.split('%')[0]  # Remove scope from IPv6
+                sock.sendto(packet.pack(), (dest_addr, 0))
+                
+                # Wait for response
+                start_time = time.time()
+                ready = select.select([sock], [], [], self.timeout)
+                if ready[0]:
+                    data, addr = sock.recvfrom(1024)
+                    elapsed = (time.time() - start_time) * 1000  # Convert to ms
+                    return True, round(elapsed, 1)
+        except (socket.error, socket.timeout):
+            pass
+        return False, 0.0
 
 def _parse_latency(ping_output: str, is_windows: bool) -> str:
     """Parses latency from the ping command's stdout."""
@@ -132,32 +204,19 @@ def ping_worker(
     is_windows = platform.system().lower() == 'windows'
     concrete_ip, use_ipv6 = _select_ping_target(ip)
 
-    command: List[str] = ['ping']
-    if is_windows:
-        command.extend(['-n', '1', '-w', '1000'])
-        if use_ipv6: command.append('-6')
-        command.append(concrete_ip)
-    else:
-        command.extend(['-n', '-q', '-c', '1', '-W', '1'])
-        if use_ipv6: command.append('-6')
-        command.append(concrete_ip)
+    pinger = ICMPPinger(timeout=1.0)
 
-    def _perform_check():
+    def _perform_check() -> StatusUpdate:
         """Performs all checks (ping, TCP, UDP) and returns a status tuple."""
         port_statuses: Optional[Dict[str, str]] = None
         udp_service_statuses: Optional[Dict[str, str]] = None
         latency_str, web_port_open = "", False
 
-        try:
-            ping_output = subprocess.check_output(
-                command,
-                stderr=subprocess.STDOUT,
-                text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW if is_windows else 0
-            )
+        success, latency_ms = pinger.ping(concrete_ip)
+        if success:
             status, color = translator("Online"), "green"
-            latency_str = _parse_latency(ping_output, is_windows)
-        except (subprocess.CalledProcessError, FileNotFoundError):
+            latency_str = f"{latency_ms}ms"
+        else:
             status, color = translator("Offline"), "red"
 
         # Always check ports, even if ping fails
@@ -182,9 +241,14 @@ def ping_worker(
                 except Exception:
                     udp_service_statuses[service_name] = "Closed"
         
-        return (
-            original_string, status, color, port_statuses, latency_str,
-            web_port_open, udp_service_statuses
+        return StatusUpdate(
+            original_string=original_string,
+            status=status,
+            color=color,
+            port_statuses=port_statuses,
+            latency_str=latency_str,
+            web_port_open=web_port_open,
+            udp_service_statuses=udp_service_statuses
         )
 
     # Perform an initial check immediately

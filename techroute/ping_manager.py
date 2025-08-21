@@ -8,6 +8,7 @@ from enum import Enum, auto
 from typing import Dict, Any, List, Optional, Callable, TYPE_CHECKING
 
 from .network import ping_worker
+from .models import StatusUpdate
 
 if TYPE_CHECKING:
     from .ui.app_ui import AppUI
@@ -72,6 +73,17 @@ class PingManager:
         # Immediately trigger a UI update to show the initial state
         self.on_status_update(list(self.targets.values()))
 
+        if self.on_checking_start:
+            self.on_checking_start()
+
+        # Delay the start of the pinging animation to allow the "checking" animation to play
+        threading.Timer(1.0, self._start_ping_threads, args=[targets, translator]).start()
+
+    def _start_ping_threads(self, targets: List[Dict[str, Any]], translator: Callable[[str], str]):
+        """Starts the ping worker threads."""
+        if self.state != PingState.PINGING:
+            return
+
         if self.on_pinging_start:
             self.on_pinging_start()
 
@@ -104,21 +116,18 @@ class PingManager:
         messages = []
         try:
             while True:
-                message = self.update_queue.get_nowait()
+                message: StatusUpdate = self.update_queue.get_nowait()
                 messages.append(message)
-
-                # Properly unpack ALL fields from the tuple
-                original_string, status, color, port_statuses, latency_str, web_port_open, udp_service_statuses = message
                 
-                if original_string in self.targets:
+                if message.original_string in self.targets:
                     # Update ALL fields, not just status
-                    self.targets[original_string].update({
-                        'status': status,
-                        'color': color,
-                        'port_statuses': port_statuses,
-                        'latency_str': latency_str,
-                        'web_port_open': web_port_open,
-                        'udp_service_statuses': udp_service_statuses
+                    self.targets[message.original_string].update({
+                        'status': message.status,
+                        'color': message.color,
+                        'port_statuses': message.port_statuses,
+                        'latency_str': message.latency_str,
+                        'web_port_open': message.web_port_open,
+                        'udp_service_statuses': message.udp_service_statuses
                     })
         except queue.Empty:
             pass

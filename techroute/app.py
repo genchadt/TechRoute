@@ -1,25 +1,23 @@
-# techroute/app.py
-
 """
 Main application class for the TechRoute GUI.
 
 This module initializes the Tkinter root, the controller, and the UI,
 then starts the application's main loop.
 """
-
 import os
 import platform
 import tkinter as tk
-from tkinter import messagebox
 from . import configuration
 from .localization import LocalizationManager
+from .controller import TechRouteController
+from .ui.app_ui import AppUI
+from .ui.types import ControllerCallbacks
+from .events import AppActions, AppStateModel
+
 try:
     import ctypes
 except ImportError:
     ctypes = None
-
-from .controller import TechRouteController
-from .ui.app_ui import AppUI
 
 class MainApp:
     """The main application runner."""
@@ -28,40 +26,39 @@ class MainApp:
         """Initializes the application components."""
         self.root = root
         
-        # Setup localization first to get the translator function
         self.localization_manager = LocalizationManager(
             configuration.load_or_create_config().get('language')
         )
         _ = self.localization_manager.translator
-
-        # The controller must be created before the UI to access config
-        self.controller = TechRouteController(
-            on_status_update=self._handle_status_update,
-            on_network_info_update=self._handle_network_info_update,
-            translator=_
-        )
         self.root.title(_("TechRoute - Machine Service Checker"))
 
+        # 1. Create the state, actions, and controller.
+        self.state = AppStateModel()
+        self.actions = AppActions()
+        self.controller = TechRouteController(
+            main_app=self,
+            state=self.state,
+            actions=self.actions,
+            translator=_
+        )
+
+        # 2. Create the UI, providing it with actions and the initial state.
+        self.ui = AppUI(root, self.actions, self.state, _)
+
+        # 3. Set up callbacks for the controller to update the UI.
+        callbacks = ControllerCallbacks(
+            on_state_change=self.ui.on_state_change,
+            on_status_update=self.ui.on_status_update,
+            on_initial_statuses_loaded=self.ui.on_initial_statuses_loaded,
+            on_network_info_update=self._handle_network_info_update,
+        )
+        self.controller.register_callbacks(callbacks)
+        
         self._set_icon()
 
-        # Force taskbar icon update on Windows
         if platform.system() == "Windows":
             self.root.withdraw()
             self.root.after(10, self.root.deiconify)
-
-        # The UI must be created with a translator
-        self.ui = AppUI(root, self, _)
-        
-        # Set controller callbacks BEFORE linking UI and controller
-        # This ensures callbacks are available when the controller initializes
-        self.controller.on_checking_start = self.ui.start_blinking_animation
-        self.controller.on_pinging_start = self.ui.stop_animation
-        self.controller.on_ping_stop = self.ui.reset_status_indicator
-        self.controller.on_ping_update = lambda: self.ui.run_ping_animation(self.controller.get_polling_rate_ms())
-        
-        # Now link the UI and controller
-        self.controller.set_ui(self.ui)
-        self.ui.set_controller(self.controller)
 
         # Start the periodic queue processing
         self._process_controller_queue()
@@ -77,9 +74,9 @@ class MainApp:
         """Retranslates the entire UI."""
         _ = self.localization_manager.translator
         self.root.title(_("TechRoute - Machine Service Checker"))
-        self.ui.retranslate_ui(_)
-        if self.controller:
-            self.controller.update_config(self.controller.config)
+        # self.ui.retranslate_ui(_) 
+        if self.actions:
+            self.actions.update_config(self.actions.get_config())
 
     def _set_icon(self):
         """Sets the application icon based on the OS."""
@@ -92,52 +89,38 @@ class MainApp:
                 if os.path.exists(icon_path_ico):
                     self.root.iconbitmap(icon_path_ico)
             elif os.path.exists(icon_path_png):
-                # For other OSes like Linux
                 photo = tk.PhotoImage(file=icon_path_png)
                 self.root.iconphoto(False, photo)
         except (tk.TclError, FileNotFoundError) as e:
             print(f"Warning: Could not load application icon. {e}")
 
-    def _handle_status_update(self, message: tuple):
-        """Callback for the controller to send status updates to the UI."""
-        try:
-            if self.ui:
-                self.ui.process_status_update(message)
-        except tk.TclError:
-            # Window is likely closing
-            pass
-
     def _handle_network_info_update(self, info: dict):
         """Callback for the controller to send network info to the UI."""
         try:
             if self.ui:
-                self.ui.update_network_info(info)
-            # Now that network info is loaded, lock the minimum window size
+                self.ui.on_network_info_update(info)
             self.root.update_idletasks()
             req_w = self.root.winfo_reqwidth()
             req_h = self.root.winfo_reqheight()
             self.root.minsize(req_w, req_h)
         except (tk.TclError, AttributeError):
-             # Window is likely closing, or UI is not fully initialized
             pass
 
     def _process_controller_queue(self):
         """Periodically tells the controller to process its event queue."""
-        self.controller.process_queue()
+        if self.actions:
+            self.actions.process_queue()
         self.root.after(100, self._process_controller_queue)
 
 def main():
     """The main entry point for the application."""
-    # Set the AppUserModelID on Windows to ensure the custom icon is used on the taskbar.
-    # This must be done BEFORE the main window is created.
     if platform.system() == "Windows":
         if ctypes:
             try:
                 from ctypes import windll
-                app_id = u'genchadt.techroute.1.0'  # Unique ID for the application
+                app_id = u'genchadt.techroute.1.0'
                 windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
             except (ImportError, AttributeError, OSError):
-                # This can fail on some minimal Windows environments.
                 print("Warning: Could not set AppUserModelID. Taskbar icon may not appear correctly.")
 
     root = tk.Tk()

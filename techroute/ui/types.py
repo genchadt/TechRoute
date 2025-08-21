@@ -1,60 +1,45 @@
 """
-Shared typing utilities for the TechRoute UI package.
+Shared typing information for the UI layer.
 """
 from __future__ import annotations
-import tkinter as tk
+from typing import Protocol, Dict, Any, Callable, List, Optional, Tuple, TYPE_CHECKING
 from tkinter import ttk
-from typing import TypeVar, TYPE_CHECKING, Protocol, Optional, Dict, Any, Callable
+from enum import Enum, auto
+from dataclasses import dataclass
 
 if TYPE_CHECKING:
-    from .app_ui import AppUI
     from ..controller import TechRouteController
-    from ..app import MainApp
 
-AppUI_T = TypeVar("AppUI_T", bound="AppUI")
+# ------------------- Data Structures for State Transfer -------------------
 
-class AppUIProtocol(Protocol):
-    """Protocol defining the interface that mixins expect from the main UI class."""
-    root: tk.Tk
-    config: Dict[str, Any]
-    controller: Optional['TechRouteController']
-    main_app: 'MainApp'
-    status_indicator: ttk.Label
-    status_bar_label: ttk.Label
-    status_container: ttk.LabelFrame
-    status_frame: ttk.Frame
-    status_widgets: Dict[str, Dict[str, Any]]
-    group_frames: Dict[str, ttk.LabelFrame]
-    blinking_animation_job: Optional[str]
-    ping_animation_job: Optional[str]
-    
-    def refresh_ui(self) -> None: ...
-    # Backward compatibility (older name) – optional, may be removed later
-    def refresh_ui_for_settings_change(self) -> None: ...
-    def update_status_bar(self, message: str) -> None: ...
-    def _open_settings_dialog(self, on_save: Callable[[Dict, Dict], None]) -> None: ...
-    # New non-destructive refresh helper methods expected on concrete class
-    def retranslate_ui(self, translator: Callable[[str], str]): ...
+class AppState(Enum):
+    """Defines the possible operational states of the application."""
+    IDLE = auto()
+    CHECKING = auto()
+    PINGING = auto()
+    STOPPING = auto()
 
-def create_indicator_button(parent: tk.Widget, text: str, is_open: bool = False, is_placeholder: bool = False, is_udp: bool = False) -> tk.Button:
-    """Creates a standardized indicator button."""
-    if is_placeholder:
-        color = "#9E9E9E"  # Standard grey for placeholders
-    else:
-        if is_udp:
-            color = "#2196F3" if is_open else "#FF9800"  # Blue/Orange for UDP
-        else:
-            color = "#4CAF50" if is_open else "#F44336"  # Green/Red for TCP
-        
-    return tk.Button(
-        parent,
-        text=text,
-        bg=color,
-        fg="white",
-        disabledforeground="white",
-        relief="raised",
-        borderwidth=1,
-        state=tk.DISABLED,
-        padx=4,
-        pady=1,
-    )
+StatusUpdatePayload = Dict[str, Any]
+NetworkInfoPayload = Dict[str, Any]
+
+# ------------------- Protocols for Decoupling -------------------
+
+@dataclass
+class ControllerCallbacks:
+    """
+    A container for all callback functions the controller uses to communicate with the UI.
+    This ensures the controller remains UI-agnostic.
+    """
+    on_state_change: Callable[[AppState], None]
+    on_status_update: Callable[[List[StatusUpdatePayload]], None]
+    on_initial_statuses_loaded: Callable[[List[Dict[str, Any]]], None]
+    on_network_info_update: Callable[[NetworkInfoPayload], None]
+
+    def __init__(self, on_state_change: Callable[[AppState], None],
+                 on_status_update: Callable[[List[StatusUpdatePayload]], None],
+                 on_initial_statuses_loaded: Callable[[List[Dict[str, Any]]], None],
+                 on_network_info_update: Callable[[NetworkInfoPayload], None]):
+        self.on_state_change = on_state_change
+        self.on_status_update = on_status_update
+        self.on_initial_statuses_loaded = on_initial_statuses_loaded
+        self.on_network_info_update = on_network_info_update

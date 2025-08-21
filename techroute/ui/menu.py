@@ -4,10 +4,13 @@ Main menu construction for the TechRoute application UI.
 from __future__ import annotations
 import tkinter as tk
 from typing import TYPE_CHECKING, Callable
-from .types import AppUIProtocol
 
-class MenuMixin(AppUIProtocol):
-    def _setup_menu(self, translator: Callable[[str], str]):
+if TYPE_CHECKING:
+    from .protocols import AppUIProtocol
+
+
+class MenuMixin:
+    def _setup_menu(self: 'AppUIProtocol', translator: Callable[[str], str]):
         """Creates the main application menu bar."""
         self._ = translator
         self.menu_bar = tk.Menu(self.root)
@@ -41,7 +44,7 @@ class MenuMixin(AppUIProtocol):
         settings_menu.add_command(
             label=self._("Preferences"), 
             underline=0, 
-            command=lambda: self._open_settings_dialog(on_save=self.main_app.handle_settings_change)
+            command=lambda: self._open_settings_dialog(on_save=self.actions.settings_changed)
         )
 
         # --- Help Menu ---

@@ -7,8 +7,9 @@ from tkinter import ttk
 from typing import Callable, Dict, Any, List
 
 from ...checkers import get_udp_service_registry
-from ..types import create_indicator_button
 from ...network import check_tcp_port
+from .utils import create_indicator_button
+from ..styling import TCP_OPEN_COLOR, TCP_CLOSED_COLOR, UDP_OPEN_COLOR, UDP_CLOSED_COLOR
 
 class NetworkInfoPanel(ttk.Frame):
     """A frame that displays network information."""
@@ -66,7 +67,7 @@ class NetworkInfoPanel(ttk.Frame):
             display_text = str(p)
             if readability == 'Simple':
                 display_text = service_map.get(str(p), str(p))
-            btn = create_indicator_button(self.local_services_frame, display_text, is_placeholder=True)
+            btn = create_indicator_button(self.local_services_frame, display_text)
             btn.pack(side=tk.LEFT, padx=(0, 4))
             self.local_service_indicators[p] = btn
 
@@ -77,26 +78,18 @@ class NetworkInfoPanel(ttk.Frame):
             sep.pack(side=tk.LEFT, padx=5, fill=tk.Y)
         if udp_ports_cfg:
             registry = get_udp_service_registry()
-            # Get all UDP services first
-            udp_services = []
-            for udp_port in udp_ports_cfg:
-                entry = registry.get(int(udp_port))
-                if not entry: continue
-                udp_services.append((udp_port, entry))
+            ordered_services = [
+                ('mDNS', 5353),
+                ('SNMP', 161),
+                ('WS-Discovery', 3702),
+                ('SLP', 427)
+            ]
             
-            # Pack in specific order: mDNS, SNMP, WS-Discovery, SLP
-            ordered_services = []
-            for name, port in [('mDNS', 5353), ('SNMP', 161), ('WS-Discovery', 3702), ('SLP', 427)]:
-                for udp_port, entry in udp_services:
-                    if entry[0] == name:
-                        ordered_services.append((udp_port, entry))
-                        break
-            
-            for udp_port, entry in ordered_services:
-                service_name, _checker = entry
-                btn = create_indicator_button(self.local_services_frame, service_name, is_placeholder=True)
-                btn.pack(side=tk.LEFT, padx=(0, 4))
-                self.local_service_indicators[udp_port] = btn
+            for service_name, port in ordered_services:
+                if port in udp_ports_cfg:
+                    btn = create_indicator_button(self.local_services_frame, service_name)
+                    btn.pack(side=tk.LEFT, padx=(0, 4))
+                    self.local_service_indicators[port] = btn
         
         self.after(100, lambda: self.start_local_services_check(config))
 
@@ -160,10 +153,10 @@ class NetworkInfoPanel(ttk.Frame):
                                 continue
                             is_open = effective_state == "Open"
                             if p in udp_ports:
-                                color = "#2196F3" if is_open else "#FF9800"
+                                color = UDP_OPEN_COLOR if is_open else UDP_CLOSED_COLOR
                             else:  # TCP
-                                color = "#4CAF50" if is_open else "#F44336"
-                            btn.config(bg=color, fg="white")
+                                color = TCP_OPEN_COLOR if is_open else TCP_CLOSED_COLOR
+                            btn.config(bg=color)
                     except tk.TclError:
                         pass
                 self.after(0, _apply)

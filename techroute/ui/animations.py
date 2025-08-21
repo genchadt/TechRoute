@@ -6,26 +6,29 @@ Provides a mixin with small, self-contained animation methods.
 from __future__ import annotations
 import tkinter as tk
 from typing import TYPE_CHECKING
-from .types import AppUIProtocol
 
-class AnimationsMixin(AppUIProtocol):
+if TYPE_CHECKING:
+    from .protocols import AppUIProtocol
+
+
+class AnimationsMixin:
     """Animation helpers for the AppUI status indicator."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self: 'AppUIProtocol', *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.animation_job = None
         self._is_blinking = False
         self._is_pinging = False
 
-    def start_blinking_animation(self):
+    def start_blinking_animation(self: 'AppUIProtocol'):
         """Starts a blinking animation with question marks."""
         if self._is_blinking:
             return
         self.stop_animation()
         self._is_blinking = True
-        self._blink()
+        self._blink()  # type: ignore
 
-    def _blink(self):
+    def _blink(self: 'AppUIProtocol'):
         """Helper function for the blinking animation."""
         if not self._is_blinking:
             return
@@ -38,7 +41,7 @@ class AnimationsMixin(AppUIProtocol):
             self.animation_job = None
             self._is_blinking = False
 
-    def stop_animation(self):
+    def stop_animation(self: 'AppUIProtocol'):
         """Stops any running animation."""
         if self.animation_job:
             self.root.after_cancel(self.animation_job)
@@ -51,7 +54,7 @@ class AnimationsMixin(AppUIProtocol):
         except tk.TclError:
             pass
 
-    def reset_status_indicator(self):
+    def reset_status_indicator(self: 'AppUIProtocol'):
         """Resets the status indicator to its initial state."""
         self.stop_animation()
         try:
@@ -59,7 +62,7 @@ class AnimationsMixin(AppUIProtocol):
         except tk.TclError:
             pass
 
-    def run_ping_animation(self, polling_rate_ms: int):
+    def run_ping_animation(self: 'AppUIProtocol', duration_ms: int):
         """Fires a one-shot animation of a moving dot, scaled by the polling rate."""
         if self._is_pinging:
             return
@@ -73,9 +76,9 @@ class AnimationsMixin(AppUIProtocol):
             "💻 . . • . . 📠", "💻 . • . . . 📠", "💻 • . . . . 📠",
         ]
         
-        # Use polling_rate_ms to determine frame delay, making animation speed responsive
+        # Use duration_ms to determine frame delay, making animation speed responsive
         # Ensure frame_delay is not too fast or slow
-        frame_delay = max(50, min(200, polling_rate_ms // len(frames)))
+        frame_delay = max(50, min(200, duration_ms // len(frames)))
 
         def update_frame(frame_index: int):
             if not self._is_pinging:
