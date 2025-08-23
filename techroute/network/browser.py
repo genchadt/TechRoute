@@ -70,7 +70,9 @@ def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[
                 possible_paths = [
                     '/usr/bin/google-chrome',
                     '/usr/bin/chromium-browser',
-                    '/usr/bin/chromium'
+                    '/usr/bin/chromium',
+                    '/snap/bin/chromium',
+                    '/usr/bin/google-chrome-stable'
                 ]
                 for p in possible_paths:
                     if os.path.exists(p):
