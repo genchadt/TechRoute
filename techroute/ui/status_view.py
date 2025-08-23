@@ -235,21 +235,16 @@ class StatusViewMixin:
 
         # Update UDP Service Buttons
         if udp_service_statuses:
-            for checker in self.actions.get_service_checkers():
-                svc_name = checker.name
+            for svc_name, svc_status in udp_service_statuses.items():
                 udp_btn = widgets['udp_widgets'].get(svc_name)
                 if udp_btn:
-                    svc_status = udp_service_statuses.get(svc_name)
-                    if svc_status:
-                        is_open = (svc_status == "Open")
+                    is_open = (svc_status == "Open")
+                    udp_btn.config(
+                        bg=UDP_OPEN_COLOR if is_open else UDP_CLOSED_COLOR,
+                        state=tk.NORMAL if is_open else tk.DISABLED,
+                        cursor="hand2" if is_open else ""
+                    )
+                    if is_open:
                         udp_btn.config(
-                            bg=UDP_OPEN_COLOR if is_open else UDP_CLOSED_COLOR,
-                            state=tk.NORMAL if is_open else tk.DISABLED,
-                            cursor="hand2" if is_open else ""
+                            command=lambda s=original_string, svc=svc_name: self._on_service_indicator_click(s, svc, is_web_port=False)
                         )
-                        if is_open:
-                            udp_btn.config(
-                                command=lambda s=original_string, svc=svc_name: self._on_service_indicator_click(s, svc, is_web_port=False)
-                            )
-                    else:
-                        udp_btn.config(bg=DEFAULT_INDICATOR_COLOR, state=tk.DISABLED)

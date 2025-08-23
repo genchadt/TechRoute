@@ -99,22 +99,20 @@ class DialogsMixin:
         quick_add_frame.pack(pady=(0, 2), padx=10, anchor='w')
 
         def add_port_if_missing(port: int):
-            content = port_text.get("1.0", tk.END)
-            lines = [l.rstrip() for l in content.splitlines()]
-            ports = set(l for l in lines if l)
+            content = port_text.get("1.0", tk.END).strip()
+            ports = {line.strip() for line in content.splitlines() if line.strip()}
             if str(port) not in ports:
-                while lines and not lines[-1]:
-                    lines.pop()
-                port_text.delete("1.0", tk.END)
-                port_text.insert("1.0", "\\n".join(lines) + ("\\n" if lines else ""))
-                if lines:
-                    port_text.insert(tk.END, str(port) + "\\n")
+                if content:
+                    port_text.insert(tk.END, f"\n{port}")
                 else:
-                    port_text.insert("1.0", str(port) + "\\n")
+                    port_text.insert(tk.END, str(port))
                 port_text.see(tk.END)
 
         ttk.Button(quick_add_frame, text="Add LPD (515)", command=lambda: add_port_if_missing(515)).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(quick_add_frame, text="Add RAW (9100)", command=lambda: add_port_if_missing(9100)).pack(side=tk.LEFT)
+
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(side=tk.BOTTOM, pady=10)
 
         text_frame = ttk.Frame(dialog)
         text_frame.pack(pady=5, padx=10, fill=tk.BOTH, expand=True)
@@ -127,10 +125,7 @@ class DialogsMixin:
         port_text.config(yscrollcommand=scrollbar.set)
 
         current_ports = self.controller.config.get('default_ports_to_check', [])
-        port_text.insert(tk.END, "\\n".join(map(str, current_ports)))
-
-        button_frame = ttk.Frame(dialog)
-        button_frame.pack(pady=10)
+        port_text.insert(tk.END, "\n".join(map(str, current_ports)))
 
         def save_ports():
             new_ports_str = port_text.get("1.0", tk.END).strip()

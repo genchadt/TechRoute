@@ -55,6 +55,9 @@ class AppUIProtocol(Protocol):
     def _blink(self) -> None:
         ...
 
+    def _ping_loop(self, duration_ms: int) -> None:
+        ...
+
     def _show_unsecure_browser_warning(self) -> bool:
         ...
 

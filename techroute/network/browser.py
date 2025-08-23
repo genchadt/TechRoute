@@ -6,6 +6,8 @@ import platform
 import shutil
 import subprocess
 import webbrowser
+import logging
+from tkinter import messagebox
 from typing import Dict, Any, List, Optional
 
 def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -48,7 +50,7 @@ def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[
             if not path:
                 for name in exec_names:
                     found_path = shutil.which(name)
-                    if found_path and ('google' in found_path.lower() or 'chromium' in found_path.lower()): 
+                    if found_path: 
                         path = found_path
                         break
         elif system == 'Darwin':
@@ -60,41 +62,64 @@ def find_browser_command(browser_preferences: List[Dict[str, Any]]) -> Optional[
                     browser['name'] = app_name
                     break
         elif system == 'Linux':
+            # First try shutil.which for the configured executable names
             for name in exec_names:
                 found_path = shutil.which(name)
                 if found_path:
                     path = found_path
                     break
             
+            # If not found, check common installation paths
             if not path:
                 possible_paths = [
                     '/usr/bin/google-chrome',
+                    '/usr/bin/google-chrome-stable',
                     '/usr/bin/chromium-browser',
                     '/usr/bin/chromium',
+                    '/usr/bin/chromium-browser-stable',
                     '/snap/bin/chromium',
-                    '/usr/bin/google-chrome-stable'
+                    '/snap/bin/google-chrome',
+                    '/var/lib/flatpak/exports/bin/com.google.Chrome',
+                    '/var/lib/flatpak/exports/bin/org.chromium.Chromium',
+                    '/opt/google/chrome/google-chrome',
+                    '/usr/lib/chromium-browser/chromium-browser',
+                    '/usr/lib/chromium/chromium'
                 ]
                 for p in possible_paths:
                     if os.path.exists(p):
                         path = p
+                        break
+            
+            # If still not found, try to find any chromium or chrome executable
+            if not path:
+                for name in ['chromium-browser', 'chromium', 'google-chrome', 'google-chrome-stable', 'chrome']:
+                    found_path = shutil.which(name)
+                    if found_path:
+                        path = found_path
                         break
 
         if path:
             return {'name': browser['name'], 'path': path, 'args': browser['args'], 'is_mac_app': is_mac_app}
     return None
 
-def open_browser_with_url(url: str, browser_command: Optional[Dict[str, Any]]):
-    """Opens a URL using the detected browser or falls back to the default."""
+def open_browser_with_url(url: str, browser_command: Optional[Dict[str, Any]]) -> None:
+    """
+    Opens a URL using the detected browser or falls back to the default.
+    
+    Returns:
+        None if successful, otherwise an error message string.
+    """
     if not browser_command:
-        print(f"No preferred browser found or configured. Falling back to OS default to open {url}")
+        logging.info(f"No preferred browser found. Falling back to OS default to open {url}")
         try:
             webbrowser.open(url)
+            return
         except Exception as e:
-            print(f"Failed to open URL in default browser: {e}")
-        return
+            logging.error(f"Failed to open URL in default browser: {e}")
+            raise RuntimeError(f"Failed to open URL in default browser: {e}")
 
     try:
-        command: Any = []
+        command: List[str] = []
         use_shell = False
         system = platform.system()
 
@@ -109,7 +134,59 @@ def open_browser_with_url(url: str, browser_command: Optional[Dict[str, Any]]):
             command.append(url)
             if system == 'Windows':
                 use_shell = True
-            
-        subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=use_shell)
+        
+        logging.info(f"Executing browser command: {' '.join(command)}")
+
+        env = os.environ.copy()
+        preexec_fn = None
+        if system == 'Linux' and os.geteuid() == 0:
+            original_user = os.environ.get('SUDO_USER')
+            if original_user:
+                import pwd
+                user_info = pwd.getpwnam(original_user)
+                uid = user_info.pw_uid
+                gid = user_info.pw_gid
+                home = user_info.pw_dir
+                
+                env['HOME'] = home
+                env['LOGNAME'] = original_user
+                env['USER'] = original_user
+                
+                # Attempt to get DISPLAY and XAUTHORITY from the original user's environment
+                try:
+                    user_env_cmd = ['sudo', '-u', original_user, 'env']
+                    user_env_proc = subprocess.run(user_env_cmd, capture_output=True, text=True, check=True)
+                    for line in user_env_proc.stdout.splitlines():
+                        if '=' in line:
+                            key, value = line.split('=', 1)
+                            if key in ['DISPLAY', 'XAUTHORITY']:
+                                env[key] = value
+                except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                    logging.warning(f"Could not get original user's environment: {e}")
+
+                def demote():
+                    os.setgid(gid)
+                    os.setuid(uid)
+                preexec_fn = demote
+        
+        log_path = "/tmp/browser_launch.log"
+        with open(log_path, "w") as log_file:
+            subprocess.Popen(command, stdout=log_file, stderr=log_file, shell=use_shell, preexec_fn=preexec_fn, env=env)
     except (OSError, FileNotFoundError) as e:
-        print(f"Error launching preferred browser: {e}. The browser might not be installed correctly.")
+        logging.error(f"Error launching preferred browser: {e}. The browser might not be installed correctly.")
+        raise RuntimeError(f"Error launching preferred browser: {e}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred while launching the browser: {e}")
+        raise RuntimeError(f"An unexpected error occurred: {e}")
+
+def open_browser_with_error_handling(url: str, browser_command: Optional[Dict[str, Any]]):
+    """
+    Opens a URL and shows a messagebox on failure.
+    """
+    try:
+        open_browser_with_url(url, browser_command)
+    except Exception as e:
+        messagebox.showerror(
+            "Browser Launch Error",
+            f"Failed to launch the web browser.\n\nDetails: {e}"
+        )

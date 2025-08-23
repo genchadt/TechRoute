@@ -26,7 +26,7 @@ class AnimationsMixin:
             return
         self.stop_animation()
         self._is_blinking = True
-        self._blink()  # type: ignore
+        self._blink()
 
     def _blink(self: 'AppUIProtocol'):
         """Helper function for the blinking animation."""
@@ -63,12 +63,19 @@ class AnimationsMixin:
             pass
 
     def run_ping_animation(self: 'AppUIProtocol', duration_ms: int):
-        """Fires a one-shot animation of a moving dot, scaled by the polling rate."""
+        """Starts a continuous ping animation loop scaled by the polling rate."""
         if self._is_pinging:
             return
         
         self.stop_animation()
         self._is_pinging = True
+        self._ping_loop(duration_ms)
+
+    def _ping_loop(self: 'AppUIProtocol', duration_ms: int):
+        """The core loop for the ping animation."""
+        if not self._is_pinging:
+            self.reset_status_indicator()
+            return
 
         frames = [
             "💻 • . . . . 📠", "💻 . • . . . 📠", "💻 . . • . . 📠",
@@ -76,10 +83,9 @@ class AnimationsMixin:
             "💻 . . • . . 📠", "💻 . • . . . 📠", "💻 • . . . . 📠",
         ]
         
-        # Use duration_ms to determine frame delay, making animation speed responsive
-        # Ensure frame_delay is not too fast or slow
-        frame_delay = max(50, min(200, duration_ms // len(frames)))
-
+        animation_duration = max(500, duration_ms - 500)
+        frame_delay = animation_duration // len(frames)
+        
         def update_frame(frame_index: int):
             if not self._is_pinging:
                 self.reset_status_indicator()
@@ -90,9 +96,10 @@ class AnimationsMixin:
                     self.status_indicator.config(text=frames[frame_index])
                     self.animation_job = self.root.after(frame_delay, update_frame, frame_index + 1)
                 else:
-                    # When animation completes, it should be ready for the next run
-                    self._is_pinging = False
+                    # Animation cycle finished, prepare for the next one
                     self.status_indicator.config(text="💻 . . . . . 📠")
+                    wait_time = max(100, duration_ms - animation_duration)
+                    self.animation_job = self.root.after(wait_time, self._ping_loop, duration_ms)
             except tk.TclError:
                 self._is_pinging = False
                 self.animation_job = None

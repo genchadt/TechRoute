@@ -94,22 +94,41 @@ class NetworkInfoPanel(ttk.Frame):
         self.after(100, lambda: self.start_local_services_check(config))
 
     def start_local_services_check(self, config: Dict[str, Any]) -> None:
-        """Kicks off an asynchronous check of local TCP ports."""
+        """Kicks off a parallel check of local TCP and UDP ports."""
         import threading
+        from collections import defaultdict
+
         if getattr(self, "_local_services_thread_running", False): return
         setattr(self, "_local_services_thread_running", True)
 
         def _worker():
             try:
-                timeout, results = 0.5, {}
-                host_v4, host_v6 = "127.0.0.1", "::1"
+                timeout = 0.2  # A shorter timeout for local checks is reasonable
+                threads = []
+                # A dict to hold results from threads, port -> list of statuses
+                threaded_results = defaultdict(list)
+
+                def _check_tcp(host, port):
+                    try:
+                        status = check_tcp_port(host, port, timeout)
+                        threaded_results[port].append(status)
+                    except Exception:
+                        threaded_results[port].append("Closed")
+
+                def _check_udp(host, port, checker):
+                    try:
+                        res = checker.check(host, timeout=timeout)
+                        status = "Open" if res and res.available else "Closed"
+                        threaded_results[port].append(status)
+                    except Exception:
+                        threaded_results[port].append("Closed")
+
+                # --- TCP Checks ---
                 for p in self._local_service_ports:
-                    try: status_v4 = check_tcp_port(host_v4, p, timeout)
-                    except Exception: status_v4 = "Closed"
-                    try: status_v6 = check_tcp_port(host_v6, p, timeout)
-                    except Exception: status_v6 = "Closed"
-                    results[p] = "Open" if (status_v4 == "Open" or status_v6 == "Open") else "Closed"
-                
+                    threads.append(threading.Thread(target=_check_tcp, args=("127.0.0.1", p)))
+                    threads.append(threading.Thread(target=_check_tcp, args=("::1", p)))
+
+                # --- UDP Checks ---
                 udp_ports_cfg = config.get('udp_services_to_check', [])
                 if udp_ports_cfg:
                     registry = get_udp_service_registry()
@@ -117,31 +136,32 @@ class NetworkInfoPanel(ttk.Frame):
                         entry = registry.get(int(udp_port))
                         if not entry: continue
                         _service_name, checker = entry
-                        status = "Closed"
-                        try:
-                            res_v4 = checker.check(host_v4, timeout=timeout)
-                            res_v6 = checker.check(host_v6, timeout=timeout)
-                            if (res_v4 and res_v4.available) or (res_v6 and res_v6.available):
-                                status = "Open"
-                        except Exception: status = "Closed"
-                        results[udp_port] = status
+                        threads.append(threading.Thread(target=_check_udp, args=("127.0.0.1", udp_port, checker)))
+                        threads.append(threading.Thread(target=_check_udp, args=("::1", udp_port, checker)))
                 
+                for t in threads: t.start()
+                for t in threads: t.join()
+
+                # --- Consolidate Results ---
+                final_results = {}
+                for port, statuses in threaded_results.items():
+                    final_results[port] = "Open" if "Open" in statuses else "Closed"
+
                 def _apply():
                     try:
                         from ...checkers import get_udp_service_registry
                         udp_ports = set(get_udp_service_registry().keys())
-                        for p, measured_status in results.items():
+                        for p, measured_status in final_results.items():
                             btn = self.local_service_indicators.get(p)
-                            if not btn:
-                                continue
-                            # Initialize hysteresis entry
+                            if not btn: continue
+                            
                             state_entry = self._service_state.setdefault(p, {"state": "Unknown", "open_streak": 0, "closed_streak": 0})
                             if measured_status == "Open":
                                 state_entry["open_streak"] += 1
                                 state_entry["closed_streak"] = 0
                                 if state_entry["open_streak"] >= self._open_confirm_threshold:
                                     state_entry["state"] = "Open"
-                            else:  # Closed reading
+                            else:
                                 state_entry["closed_streak"] += 1
                                 state_entry["open_streak"] = 0
                                 if state_entry["closed_streak"] >= self._close_confirm_threshold:
@@ -149,21 +169,20 @@ class NetworkInfoPanel(ttk.Frame):
 
                             effective_state = state_entry["state"]
                             if effective_state == "Unknown":
-                                # Keep placeholder color (gray-ish) until confirmed
                                 continue
+                            
                             is_open = effective_state == "Open"
-                            if p in udp_ports:
-                                color = UDP_OPEN_COLOR if is_open else UDP_CLOSED_COLOR
-                            else:  # TCP
-                                color = TCP_OPEN_COLOR if is_open else TCP_CLOSED_COLOR
+                            color = (UDP_OPEN_COLOR if p in udp_ports else TCP_OPEN_COLOR) if is_open else \
+                                    (UDP_CLOSED_COLOR if p in udp_ports else TCP_CLOSED_COLOR)
                             btn.config(bg=color)
                     except tk.TclError:
-                        pass
+                        pass # Widget destroyed
+                
                 self.after(0, _apply)
             finally:
                 setattr(self, "_local_services_thread_running", False)
-                self.after(5000, lambda: self.start_local_services_check(config))
-        
+                self.after(2000, lambda: self.start_local_services_check(config)) # Check more frequently
+
         threading.Thread(target=_worker, daemon=True).start()
 
     def update_info(self, info: Dict[str, Any]) -> None:
@@ -172,6 +191,8 @@ class NetworkInfoPanel(ttk.Frame):
         We only overwrite a field if the new value looks valid (has a digit or ':').
         Otherwise, keep cached value to prevent flicker back to 'Detecting…'.
         """
+        import logging
+        logging.info(f"NetworkInfoPanel.update_info called with: {info}")
         try:
             def _is_valid(val: Any) -> bool:
                 if not val or not isinstance(val, (str, int)):

@@ -34,7 +34,9 @@ class AppActions:
         self.process_queue: Callable[[], None] = lambda: None
         self.update_config: Callable[[Dict[str, Any]], None] = lambda *args: None
         self.get_browser_command: Callable[[], Dict[str, Any]] = lambda: {}
+        self.get_browser_name: Callable[[], str] = lambda: "Unknown"
         self.settings_changed: Callable[[Dict[str, Any], Dict[str, Any]], None] = lambda *args: None
         self.get_config: Callable[[], Dict[str, Any]] = lambda: {}
         self.extract_host: Callable[[str], str] = lambda s: s
         self.get_service_checkers: Callable[[], List[Any]] = lambda: []
+        self.register_network_info_callback: Callable[[Callable[[Dict[str, Any]], None]], None] = lambda cb: None

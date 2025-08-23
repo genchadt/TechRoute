@@ -77,13 +77,16 @@ class TechRouteController:
         self.actions.process_queue = self.process_queue
         self.actions.update_config = self.update_config
         self.actions.get_browser_command = lambda: self.browser_command or {}
+        self.actions.get_browser_name = self.get_browser_name
         self.actions.settings_changed = self.main_app.handle_settings_change
         self.actions.get_config = lambda: self.config
         self.actions.extract_host = self.parser.extract_host
         self.actions.get_service_checkers = lambda: self.service_checker.checkers
+        self.actions.register_network_info_callback = self.register_network_info_callback
 
         self.web_ui_targets = {}
         self.network_info = {}
+        self._network_info_callback: Optional[Callable[[Dict[str, Any]], None]] = None
         self.browser_command = find_browser_command(self.config.get('browser_preferences', []))
         self.network_info_queue: Queue[Dict[str, Any]] = Queue()
 
@@ -94,6 +97,10 @@ class TechRouteController:
         """Registers UI callbacks and initializes components that need them."""
         self.callbacks = callbacks
         self._initialize_ping_manager()
+
+    def register_network_info_callback(self, callback: Callable[[Dict[str, Any]], None]):
+        """Registers a callback for network information updates."""
+        self._network_info_callback = callback
 
     def _initialize_ping_manager(self):
         """Creates the PingManager instance once callbacks are available."""
@@ -133,7 +140,10 @@ class TechRouteController:
             clear_network_info_cache()  # Ensure fresh data
             info = get_network_info()
             
+            logging.info(f"Background network monitor got info: {info}")
+            
             if info and info.get("primary_ipv4"):
+                logging.info(f"Putting network info in queue: {info}")
                 self.network_info_queue.put(info)
                 self._network_thread_stop_event.wait(60)
             else:
@@ -149,7 +159,8 @@ class TechRouteController:
 
     def get_browser_name(self) -> str:
         """Returns the name of the detected browser or a default."""
-        return self.browser_command['name'] if self.browser_command else "OS Default"
+        self.browser_command = find_browser_command(self.config.get('browser_preferences', []))
+        return self.browser_command['name'] if self.browser_command else "Unknown"
 
     def get_polling_rate_ms(self) -> int:
         """Gets the polling rate in milliseconds from the config."""
@@ -167,9 +178,17 @@ class TechRouteController:
         """Processes network info updates from the queue."""
         try:
             info = self.network_info_queue.get_nowait()
+            logging.info(f"Processing network update from queue: {info}")
             self.network_info = info
-            if self.callbacks:
+            if self._network_info_callback:
+                logging.info(f"Calling network info callback with: {info}")
+                self._network_info_callback(info)
+            elif self.callbacks:
+                # Fallback for older connections if any
+                logging.info(f"Calling on_network_info_update with: {info}")
                 self.callbacks.on_network_info_update(info)
+            else:
+                logging.warning("No network info callback registered")
         except Empty:
             pass
 

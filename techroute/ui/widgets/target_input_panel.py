@@ -78,10 +78,14 @@ class TargetInputPanel(ttk.Frame):
         self.ip_entry.insert("end", prefix + text + "\n")
         self.ip_entry.see("end")
 
+    def update_browser_name(self, browser_name: str):
+        """Updates the browser name in the frame's title."""
+        self.input_frame.config(text=self._(f"Target Browser: {browser_name}"))
+
     def retranslate_ui(self, translator: Callable[[str], str]):
         """Retranslates the UI elements of the widget."""
         self._ = translator
-        self.input_frame.config(text=self._("Target Browser: Unknown"))
+        # The browser name will be updated by `update_browser_name`
         self.instruction_label.config(text=self._("Enter IPs or Hostnames, one per line"))
         self.add_localhost_button.config(text=self._("Add localhost"))
         self.add_gateway_button.config(text=self._("Add Gateway"))

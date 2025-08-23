@@ -50,7 +50,7 @@ class MainApp:
             on_state_change=self.ui.on_state_change,
             on_status_update=self.ui.on_status_update,
             on_initial_statuses_loaded=self.ui.on_initial_statuses_loaded,
-            on_network_info_update=self._handle_network_info_update,
+            on_network_info_update=self.ui.on_network_info_update,
         )
         self.controller.register_callbacks(callbacks)
         
@@ -93,18 +93,6 @@ class MainApp:
                 self.root.iconphoto(False, photo)
         except (tk.TclError, FileNotFoundError) as e:
             print(f"Warning: Could not load application icon. {e}")
-
-    def _handle_network_info_update(self, info: dict):
-        """Callback for the controller to send network info to the UI."""
-        try:
-            if self.ui:
-                self.ui.on_network_info_update(info)
-            self.root.update_idletasks()
-            req_w = self.root.winfo_reqwidth()
-            req_h = self.root.winfo_reqheight()
-            self.root.minsize(req_w, req_h)
-        except (tk.TclError, AttributeError):
-            pass
 
     def _process_controller_queue(self):
         """Periodically tells the controller to process its event queue."""

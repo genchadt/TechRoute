@@ -16,7 +16,7 @@ from .status_view import StatusViewMixin
 from .widgets import NetworkInfoPanel, TargetInputPanel, StatusBar
 from .types import AppState, StatusUpdatePayload, NetworkInfoPayload
 from ..events import AppActions, AppStateModel
-from ..network import open_browser_with_url
+from ..network import open_browser_with_error_handling
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -29,6 +29,7 @@ class AppUI(
     StatusViewMixin
 ):
     """Manages the user interface of the TechRoute application."""
+    network_info_panel: NetworkInfoPanel
 
     def __init__(self, root: tk.Tk, actions: AppActions, state: AppStateModel, translator: Callable[[str], str]):
         """Initializes the UI and connects it to the controller."""
@@ -51,6 +52,8 @@ class AppUI(
         self._setup_ui_base()
         
         self._setup_ui_controller_dependent()
+
+        self.actions.register_network_info_callback(self.on_network_info_update)
 
         self.setup_status_display([])
         self.root.update_idletasks()
@@ -192,7 +195,7 @@ class AppUI(
         """
         url = self.actions.get_web_ui_url(original_string, port)
         if url:
-            open_browser_with_url(url, self.actions.get_browser_command())
+            open_browser_with_error_handling(url, self.actions.get_browser_command())
 
     def launch_all_web_uis(self):
         """Launches web UIs for all targets with open web ports."""
@@ -201,7 +204,7 @@ class AppUI(
         
         urls = self.actions.get_all_web_ui_urls()
         for url in urls:
-            open_browser_with_url(url, self.actions.get_browser_command())
+            open_browser_with_error_handling(url, self.actions.get_browser_command())
 
     def launch_web_ui_for_port(self, original_string: str, port: int):
         """Launches a web UI for a specific IP and port."""
@@ -272,7 +275,8 @@ class AppUI(
     def _periodic_network_update(self):
         if self.actions:
             self.actions.process_network_updates()
-        self.root.after(250, self._periodic_network_update)
+            self.target_input_panel.update_browser_name(self.actions.get_browser_name())
+        self.root.after(1000, self._periodic_network_update)
 
     def _add_localhost_to_input(self):
         self._append_unique_line_to_ip_entry("127.0.0.1")
@@ -334,8 +338,14 @@ class AppUI(
         self.status_scrollbar.grid() if frame_height > canvas_height else self.status_scrollbar.grid_remove()
 
     def shrink_to_fit(self):
+        import platform
         self.root.update_idletasks()
-        self.root.geometry(f"{self.root.winfo_reqwidth()}x{self.root.winfo_reqheight()}")
+        width = self.root.winfo_reqwidth()
+        height = self.root.winfo_reqheight()
+        if platform.system() == "Linux":
+            width = int(width * 1.25)
+            # height = int(height * 1.15)
+        self.root.geometry(f"{width}x{height}")
 
     @property
     def main_app(self) -> AppUI:
