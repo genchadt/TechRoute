@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import subprocess
+import tempfile
 import webbrowser
 import logging
 from tkinter import messagebox
@@ -139,39 +140,54 @@ def open_browser_with_url(url: str, browser_command: Optional[Dict[str, Any]]) -
 
         env = os.environ.copy()
         preexec_fn = None
-        if system == 'Linux' and os.geteuid() == 0:
-            original_user = os.environ.get('SUDO_USER')
-            if original_user:
-                import pwd
-                user_info = pwd.getpwnam(original_user)
-                uid = user_info.pw_uid
-                gid = user_info.pw_gid
-                home = user_info.pw_dir
-                
-                env['HOME'] = home
-                env['LOGNAME'] = original_user
-                env['USER'] = original_user
-                
-                # Attempt to get DISPLAY and XAUTHORITY from the original user's environment
-                try:
-                    user_env_cmd = ['sudo', '-u', original_user, 'env']
-                    user_env_proc = subprocess.run(user_env_cmd, capture_output=True, text=True, check=True)
-                    for line in user_env_proc.stdout.splitlines():
-                        if '=' in line:
-                            key, value = line.split('=', 1)
-                            if key in ['DISPLAY', 'XAUTHORITY']:
-                                env[key] = value
-                except (subprocess.CalledProcessError, FileNotFoundError) as e:
-                    logging.warning(f"Could not get original user's environment: {e}")
+        if system == 'Linux':
+            try:
+                # This block is Linux-specific because it deals with privilege dropping
+                # for running browsers as root, which is a common issue on Linux.
+                # These functions (geteuid, setgid, etc.) do not exist on Windows,
+                # so we wrap this in a try...except to avoid AttributeError.
+                if os.geteuid() == 0: # type: ignore
+                    original_user = os.environ.get('SUDO_USER')
+                    if original_user:
+                        import pwd
+                        user_info = pwd.getpwnam(original_user) # type: ignore
+                        uid = user_info.pw_uid
+                        gid = user_info.pw_gid
+                        home = user_info.pw_dir
+                        
+                        env['HOME'] = home
+                        env['LOGNAME'] = original_user
+                        env['USER'] = original_user
+                        
+                        # Attempt to get DISPLAY and XAUTHORITY from the original user's environment
+                        try:
+                            user_env_cmd = ['sudo', '-u', original_user, 'env']
+                            user_env_proc = subprocess.run(user_env_cmd, capture_output=True, text=True, check=True)
+                            for line in user_env_proc.stdout.splitlines():
+                                if '=' in line:
+                                    key, value = line.split('=', 1)
+                                    if key in ['DISPLAY', 'XAUTHORITY']:
+                                        env[key] = value
+                        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                            logging.warning(f"Could not get original user's environment: {e}")
 
-                def demote():
-                    os.setgid(gid)
-                    os.setuid(uid)
-                preexec_fn = demote
+                        def demote():
+                            os.setgid(gid) # type: ignore
+                            os.setuid(uid) # type: ignore
+                        preexec_fn = demote
+            except AttributeError:
+                # This will be raised on non-Linux systems where os.geteuid doesn't exist.
+                # We can safely ignore it as this logic is only for Linux.
+                pass
         
-        log_path = "/tmp/browser_launch.log"
+        log_path = os.path.join(tempfile.gettempdir(), "browser_launch.log")
         with open(log_path, "w") as log_file:
-            subprocess.Popen(command, stdout=log_file, stderr=log_file, shell=use_shell, preexec_fn=preexec_fn, env=env)
+            # On Windows, preexec_fn is not supported
+            popen_kwargs = {'stdout': log_file, 'stderr': log_file, 'shell': use_shell, 'env': env}
+            if system != 'Windows':
+                popen_kwargs['preexec_fn'] = preexec_fn
+            
+            subprocess.Popen(command, **popen_kwargs)
     except (OSError, FileNotFoundError) as e:
         logging.error(f"Error launching preferred browser: {e}. The browser might not be installed correctly.")
         raise RuntimeError(f"Error launching preferred browser: {e}")
