@@ -12,12 +12,11 @@ import subprocess
 import threading
 import time
 import random
-from functools import lru_cache
-import ipaddress
-from typing import Dict, Any, List, Optional, Tuple, cast, Callable
+from typing import Dict, Any, List, Optional, Tuple, Callable
 from dataclasses import dataclass
 
 from ..models import StatusUpdate
+from .utils import _cached_resolve_host, check_tcp_port
 
 @dataclass
 class ICMPPacket:
@@ -86,77 +85,6 @@ class ICMPPinger:
             pass
         return False, 0.0
 
-def _parse_latency(ping_output: str, is_windows: bool) -> str:
-    """Parses latency from the ping command's stdout."""
-    try:
-        if is_windows:
-            match = re.search(r"Average\s?=\s?(\d+)ms", ping_output)
-            if match: return f"{match.group(1)}ms"
-        else:
-            m = re.search(r"rtt min/(avg|durchschnitt)/max/(mdev|stddev) = [\d.]+/([\d.]+)/", ping_output)
-            if m:
-                return f"{int(float(m.group(3)))}ms"
-            m = re.search(r"round-trip min/(avg|durchschnitt)/max/(mdev|stddev) = [\d.]+/([\d.]+)/", ping_output)
-            if m:
-                return f"{int(float(m.group(2)))}ms"
-    except (IndexError, ValueError):
-        pass
-    return ""
-
-@lru_cache(maxsize=128)
-def _is_ip_literal(host: str) -> Tuple[bool, Optional[int]]:
-    try:
-        socket.inet_pton(socket.AF_INET, host)
-        return True, socket.AF_INET
-    except OSError:
-        pass
-    try:
-        socket.inet_pton(socket.AF_INET6, host.split('%')[0])
-        return True, socket.AF_INET6
-    except OSError:
-        return False, None
-
-@lru_cache(maxsize=128)
-def _cached_resolve_host(host: str) -> List[Tuple[int, str, int, int]]:
-    """Resolve hostname to a list of addresses."""
-    is_ip, family = _is_ip_literal(host)
-    if is_ip:
-        if family == socket.AF_INET:
-            return [(socket.AF_INET, host, 0, 0)]
-        else:
-            ip_only, _, scope = host.partition('%')
-            scopeid = 0
-            try:
-                if scope:
-                    scopeid = socket.if_nametoindex(scope)
-            except OSError:
-                scopeid = 0
-            return [(socket.AF_INET6, ip_only, 0, scopeid)]
-
-    results: List[Tuple[int, str, int, int]] = []
-    try:
-        infos = socket.getaddrinfo(host, None)
-        for family, socktype, proto, canonname, sockaddr in infos:
-            if family == socket.AF_INET:
-                if isinstance(sockaddr, tuple) and len(sockaddr) >= 2:
-                    ip = cast(str, sockaddr[0])
-                    results.append((family, ip, 0, 0))
-            elif family == socket.AF_INET6:
-                if isinstance(sockaddr, tuple) and len(sockaddr) == 4:
-                    ip6, flowinfo, scopeid = cast(str, sockaddr[0]), cast(int, sockaddr[2]), cast(int, sockaddr[3])
-                    results.append((family, ip6, flowinfo, scopeid))
-    except socket.gaierror:
-        results = []
-
-    seen = set()
-    deduped: List[Tuple[int, str, int, int]] = []
-    for rec in results:
-        key = (rec[0], rec[1], rec[3])
-        if key not in seen:
-            seen.add(key)
-            deduped.append(rec)
-    return deduped
-
 def _select_ping_target(host: str) -> Tuple[str, bool]:
     """Choose a concrete IP address to ping."""
     addrs = _cached_resolve_host(host)
@@ -169,33 +97,13 @@ def _select_ping_target(host: str) -> Tuple[str, bool]:
         return v4[0][1], False
     return host, False
 
-def _check_port(host: str, port: int, timeout: float) -> str:
-    """Checks if a TCP port is open on a given host."""
-    addrs = _cached_resolve_host(host)
-    if not addrs:
-        return "Hostname Error"
-
-    for family, ip, flowinfo, scopeid in addrs:
-        try:
-            with socket.socket(family, socket.SOCK_STREAM) as sock:
-                sock.settimeout(timeout)
-                sockaddr = (ip, port) if family == socket.AF_INET else (ip, port, flowinfo, scopeid)
-                if sock.connect_ex(sockaddr) == 0:
-                    return "Open"
-        except (socket.timeout, OSError):
-            continue
-    return "Closed"
-
-def check_tcp_port(host: str, port: int, timeout: float) -> str:
-    """Public helper to check a TCP port."""
-    return _check_port(host, port, timeout)
-
 def ping_worker(
     target: Dict[str, Any],
     stop_event: threading.Event,
     update_queue: queue.Queue,
     app_config: Dict[str, Any],
-    translator: Callable[[str], str]
+    translator: Callable[[str], str],
+    on_first_check_done: Optional[Callable[[], None]] = None
 ):
     """Worker thread function to ping an IP, check ports, and queue GUI updates."""
     ip, ports, original_string = target['ip'], target['ports'], target['original_string']
@@ -221,7 +129,7 @@ def ping_worker(
 
         # Always check ports, even if ping fails
         if ports:
-            port_statuses = {str(port): _check_port(ip, port, port_timeout) for port in ports}
+            port_statuses = {str(port): check_tcp_port(ip, port, port_timeout) for port in ports}
             if any(port_statuses.get(str(p)) == 'Open' for p in [80, 443, 8080]):
                 web_port_open = True
 
@@ -253,6 +161,9 @@ def ping_worker(
 
     # Perform an initial check immediately
     update_queue.put(_perform_check())
+
+    if on_first_check_done:
+        on_first_check_done()
 
     while not stop_event.is_set():
         if ping_interval > 0:

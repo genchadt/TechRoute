@@ -29,12 +29,14 @@ class PingManager:
         on_pinging_start: Optional[Callable] = None,
         on_ping_stop: Optional[Callable] = None,
         on_ping_update: Optional[Callable] = None,
+        on_initial_check_complete: Optional[Callable] = None,
     ):
         self.config = app_config
         self.on_status_update = on_status_update
         self.on_checking_start = on_checking_start
         self.on_pinging_start = on_pinging_start
         self.on_ping_stop = on_ping_stop
+        self.on_initial_check_complete = on_initial_check_complete
         self.on_ping_update = on_ping_update
 
         self.state = PingState.IDLE
@@ -59,7 +61,7 @@ class PingManager:
         for target in targets:
             # Set initial values for ALL fields
             target.update({
-                'status': translator('Pinging...'),
+                'status': translator('Checking...'),
                 'color': 'gray',
                 'latency_str': '',
                 'port_statuses': None,
@@ -68,7 +70,7 @@ class PingManager:
             })
             self.targets[target['original_string']] = target
         
-        self.config['ping_interval_seconds'] = max(50, polling_rate_ms) / 1000.0
+        self.config['ping_interval_seconds'] = polling_rate_ms / 1000.0
         
         # Immediately trigger a UI update to show the initial state
         self.on_status_update(list(self.targets.values()))
@@ -76,21 +78,27 @@ class PingManager:
         if self.on_checking_start:
             self.on_checking_start()
 
-        # Delay the start of the pinging animation to allow the "checking" animation to play
-        threading.Timer(1.0, self._start_ping_threads, args=[targets, translator]).start()
+        # Create a shared event to signal when the first check is done
+        first_check_done = threading.Event()
 
-    def _start_ping_threads(self, targets: List[Dict[str, Any]], translator: Callable[[str], str]):
-        """Starts the ping worker threads."""
-        if self.state != PingState.PINGING:
-            return
-
-        if self.on_pinging_start:
-            self.on_pinging_start()
+        # Define a callback that will be triggered by the ping_worker
+        def _on_first_check_complete():
+            if not first_check_done.is_set():
+                if self.on_initial_check_complete:
+                    self.on_initial_check_complete()
+                first_check_done.set()
 
         for target in targets:
             thread = threading.Thread(
                 target=ping_worker,
-                args=(target, self.stop_event, self.update_queue, self.config, translator),
+                args=(
+                    target,
+                    self.stop_event,
+                    self.update_queue,
+                    self.config,
+                    translator,
+                    _on_first_check_complete
+                ),
                 daemon=True
             )
             thread.start()

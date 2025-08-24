@@ -39,10 +39,17 @@ def request_elevation():
                 # Executed as a script
                 params = f'"{sys.argv[0]}" {" ".join(sys.argv[1:])}'
 
+            # Use pythonw.exe for GUI applications to avoid a console window
+            executable = sys.executable
+            if "python.exe" in executable.lower():
+                pythonw_exe = executable.lower().replace("python.exe", "pythonw.exe")
+                if os.path.exists(pythonw_exe):
+                    executable = pythonw_exe
+
             ctypes.windll.shell32.ShellExecuteW(
                 None,
                 "runas",
-                sys.executable,
+                executable,
                 params,
                 None,
                 1

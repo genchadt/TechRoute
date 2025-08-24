@@ -93,10 +93,18 @@ class DialogsMixin:
         dialog.transient(self.root)
         dialog.grab_set()
 
-        ttk.Label(dialog, text="Default ports to check (one per line):").pack(pady=5, padx=10, anchor='w')
+        content = ttk.Frame(dialog, padding=10)
+        content.pack(fill=tk.BOTH, expand=True)
 
-        quick_add_frame = ttk.Frame(dialog)
-        quick_add_frame.pack(pady=(0, 2), padx=10, anchor='w')
+        dialog.rowconfigure(0, weight=1)
+        dialog.columnconfigure(0, weight=1)
+        content.rowconfigure(2, weight=1)
+        content.columnconfigure(0, weight=1)
+
+        ttk.Label(content, text="Default ports to check (one per line):").grid(row=0, column=0, sticky='w')
+
+        quick_add_frame = ttk.Frame(content)
+        quick_add_frame.grid(row=1, column=0, sticky='w', pady=(2, 5))
 
         def add_port_if_missing(port: int):
             content = port_text.get("1.0", tk.END).strip()
@@ -111,18 +119,20 @@ class DialogsMixin:
         ttk.Button(quick_add_frame, text="Add LPD (515)", command=lambda: add_port_if_missing(515)).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(quick_add_frame, text="Add RAW (9100)", command=lambda: add_port_if_missing(9100)).pack(side=tk.LEFT)
 
-        button_frame = ttk.Frame(dialog)
-        button_frame.pack(side=tk.BOTTOM, pady=10)
-
-        text_frame = ttk.Frame(dialog)
-        text_frame.pack(pady=5, padx=10, fill=tk.BOTH, expand=True)
+        text_frame = ttk.Frame(content)
+        text_frame.grid(row=2, column=0, sticky='nsew')
+        text_frame.rowconfigure(0, weight=1)
+        text_frame.columnconfigure(0, weight=1)
 
         port_text = tk.Text(text_frame, width=20, height=8)
-        port_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        port_text.grid(row=0, column=0, sticky='nsew')
 
         scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=port_text.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar.grid(row=0, column=1, sticky='ns')
         port_text.config(yscrollcommand=scrollbar.set)
+
+        button_frame = ttk.Frame(content)
+        button_frame.grid(row=3, column=0, pady=(10, 0))
 
         current_ports = self.controller.config.get('default_ports_to_check', [])
         port_text.insert(tk.END, "\n".join(map(str, current_ports)))
@@ -150,7 +160,10 @@ class DialogsMixin:
             new_config = self.controller.config.copy()
             new_config['default_ports_to_check'] = sorted(list(set(default_ports)))
             self.controller.update_config(new_config)
-            dialog.destroy()
+            
+            current_ports = self.controller.config.get('default_ports_to_check', [])
+            port_text.delete("1.0", tk.END)
+            port_text.insert(tk.END, "\n".join(map(str, current_ports)))
 
         ttk.Button(button_frame, text="Save", command=save_ports).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Reset to Default", command=reset_to_default).pack(side=tk.LEFT, padx=5)
@@ -172,8 +185,11 @@ class DialogsMixin:
         dialog.transient(self.root)
         dialog.grab_set()
 
+        dialog.rowconfigure(0, weight=1)
+        dialog.columnconfigure(0, weight=1)
+
         content = ttk.Frame(dialog, padding=10)
-        content.pack(fill=tk.BOTH, expand=True)
+        content.grid(row=0, column=0, sticky='nsew')
 
         ttk.Label(content, text="Theme:").grid(row=0, column=0, sticky='w', pady=(0, 8))
         theme_values = ["System", "Light", "Dark"]
@@ -244,11 +260,16 @@ class DialogsMixin:
         dialog.transient(self.root)
         dialog.grab_set()
 
+        dialog.rowconfigure(0, weight=1)
+        dialog.columnconfigure(0, weight=1)
+
         content = ttk.Frame(dialog, padding=10)
-        content.pack(fill=tk.BOTH, expand=True)
+        content.grid(row=0, column=0, sticky='nsew')
+        content.rowconfigure(0, weight=1)
+        content.columnconfigure(0, weight=1)
 
         group = ttk.LabelFrame(content, text="UDP Services", padding=10)
-        group.pack(fill=tk.BOTH, expand=True)
+        group.grid(row=0, column=0, sticky='nsew')
 
         services = [
             (427, "SLP"),
@@ -273,7 +294,7 @@ class DialogsMixin:
         ttk.Checkbutton(group, text="Select All", variable=select_all_var, command=toggle_all).grid(row=len(services), column=0, sticky="w", pady=(6, 0))
 
         accreditation_frame = ttk.Frame(content)
-        accreditation_frame.pack(fill=tk.X, pady=(8, 0))
+        accreditation_frame.grid(row=1, column=0, sticky='ew', pady=(8, 0))
         
         desc = ttk.Label(accreditation_frame, text="UDP detection powered by nmap (planned).")
         desc.pack(anchor="w")
@@ -295,7 +316,7 @@ class DialogsMixin:
         link.bind("<Button-1>", open_link)
 
         btns = ttk.Frame(content)
-        btns.pack(pady=(10, 0))
+        btns.grid(row=2, column=0, pady=(10, 0))
 
         def save_services():
             selected_ports = sorted(int(p) for p, v in vars_map.items() if v.get())
@@ -303,8 +324,19 @@ class DialogsMixin:
             new_config['udp_services_to_check'] = selected_ports
             self.controller.update_config(new_config)
             dialog.destroy()
+            
+        def reset_to_default():
+            default_services = configuration.DEFAULT_CONFIG.get('udp_services_to_check', [])
+            new_config = self.controller.config.copy()
+            new_config['udp_services_to_check'] = sorted(list(set(default_services)))
+            self.controller.update_config(new_config)
+            
+            selected_existing = set(new_config.get('udp_services_to_check', []))
+            for port, var in vars_map.items():
+                var.set(int(port) in selected_existing)
 
         ttk.Button(btns, text="Save", command=save_services).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btns, text="Reset to Default", command=reset_to_default).pack(side=tk.LEFT, padx=5)
         ttk.Button(btns, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 
         self.root.wait_window(dialog)

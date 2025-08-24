@@ -43,7 +43,14 @@ class MainApp:
         )
 
         # 2. Create the UI, providing it with actions and the initial state.
-        self.ui = AppUI(root, self.actions, self.state, _)
+        self.ui = AppUI(
+            root,
+            self.actions,
+            self.state,
+            self.controller,
+            _,
+            on_ui_ready=self._initial_ui_load
+        )
 
         # 3. Set up callbacks for the controller to update the UI.
         callbacks = ControllerCallbacks(
@@ -62,6 +69,12 @@ class MainApp:
 
         # Start the periodic queue processing
         self._process_controller_queue()
+
+    def _initial_ui_load(self):
+        """Performs the initial loading of data into the UI."""
+        # This is where you can now safely interact with both the controller
+        # and the UI, knowing they are both fully initialized.
+        pass
 
     def handle_settings_change(self, old_config, new_config):
         """Handles logic for applying settings changes."""

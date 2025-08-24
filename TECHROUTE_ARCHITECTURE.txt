@@ -98,6 +98,15 @@ Key Functions:
 4. Controller processes queue and updates UI
 5. UI renders status changes
 
+## UI Initialization Flow
+1. `MainApp` initializes the `TechRouteController`.
+2. `MainApp` initializes the `AppUI`.
+3. `MainApp` creates the `ControllerCallbacks` object, which contains references to the UI's methods.
+4. `MainApp` calls `self.controller.register_callbacks(callbacks)`, which initializes the `PingManager`.
+5. `AppUI` completes its initialization and calls the `on_ui_ready` callback.
+6. The `on_ui_ready` callback, implemented in `MainApp`, calls the `_initial_ui_load` method.
+7. `_initial_ui_load` can then safely perform any actions that require both the UI and the controller to be fully initialized.
+
 ## Key Data Structures
 - `target_info` dict - Contains all status info for a target
 - `port_statuses` dict - Maps ports to status ("Open"/"Closed")

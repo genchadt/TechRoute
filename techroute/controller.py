@@ -98,6 +98,10 @@ class TechRouteController:
         self.callbacks = callbacks
         self._initialize_ping_manager()
 
+    def register_ui_ready_callback(self, callback: Callable[[], None]):
+        """Registers a callback to be invoked when the UI is fully initialized."""
+        callback()
+
     def register_network_info_callback(self, callback: Callable[[Dict[str, Any]], None]):
         """Registers a callback for network information updates."""
         self._network_info_callback = callback
@@ -110,8 +114,8 @@ class TechRouteController:
             app_config=self.config,
             on_status_update=self.callbacks.on_status_update,
             on_checking_start=lambda: self._set_state(AppState.CHECKING),
-            on_pinging_start=lambda: self._set_state(AppState.PINGING),
             on_ping_stop=lambda: self._set_state(AppState.IDLE),
+            on_initial_check_complete=lambda: self._set_state(AppState.PINGING)
         )
 
     def _set_state(self, new_state: AppState):
@@ -231,7 +235,7 @@ class TechRouteController:
             self.start_ping_process(ip_string, polling_rate_ms)
 
     def start_ping_process(self, ip_string: str, polling_rate_ms: int):
-        """Validates IPs and starts the pinging process via the manager."""
+        """Starts the target validation and pinging process in a background thread."""
         if not self.ping_manager or not self.callbacks:
             return
 
@@ -239,16 +243,35 @@ class TechRouteController:
             logging.error("No targets provided.")
             raise ValueError("No targets provided.")
 
-        targets = self.parser.parse_and_validate_targets(ip_string)
-        if not targets:
-            return
-        
-        self.web_ui_targets.clear()
-        
-        initial_statuses = [{'original_string': t['original_string']} for t in targets]
-        self.callbacks.on_initial_statuses_loaded(initial_statuses)
+        # Start the validation and pinging process in a background thread
+        # to avoid blocking the UI with DNS lookups.
+        threading.Thread(
+            target=self._validate_and_start_pinging,
+            args=(ip_string, polling_rate_ms),
+            daemon=True
+        ).start()
 
-        self.ping_manager.start(targets, polling_rate_ms, self._)
+    def _validate_and_start_pinging(self, ip_string: str, polling_rate_ms: int):
+        """Parses targets and starts the ping manager."""
+        if not self.ping_manager or not self.callbacks:
+            return
+        try:
+            targets = self.parser.parse_and_validate_targets(ip_string)
+            if not targets:
+                self._set_state(AppState.IDLE)
+                return
+
+            self.web_ui_targets.clear()
+            
+            initial_statuses = [{'original_string': t['original_string']} for t in targets]
+            self.callbacks.on_initial_statuses_loaded(initial_statuses)
+
+            self.ping_manager.start(targets, polling_rate_ms, self._)
+        except (ValueError, AttributeError) as e:
+            logging.error(f"Target validation failed: {e}")
+            # In a real app, you'd show this error to the user.
+            # For now, just return to idle.
+            self._set_state(AppState.IDLE)
 
     def stop_ping_process(self):
         """Stops the active pinging process via the manager."""

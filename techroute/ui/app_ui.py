@@ -20,6 +20,7 @@ from ..network import open_browser_with_error_handling
 
 if TYPE_CHECKING:
     from typing import Callable
+    from ..controller import TechRouteController
 
 
 class AppUI(
@@ -31,23 +32,31 @@ class AppUI(
     """Manages the user interface of the TechRoute application."""
     network_info_panel: NetworkInfoPanel
 
-    def __init__(self, root: tk.Tk, actions: AppActions, state: AppStateModel, translator: Callable[[str], str]):
+    def __init__(self, root: tk.Tk, actions: AppActions, state: AppStateModel, controller: "TechRouteController", translator: Callable[[str], str], on_ui_ready: Optional[Callable] = None):
         """Initializes the UI and connects it to the controller."""
         super().__init__()
         self.root = root
         self.actions = actions
         self.state = state
+        self.controller = controller
         self._ = translator
+        self.on_ui_ready = on_ui_ready
         self._config = {} # Will be populated by controller state later
         self.status_widgets: Dict[str, Dict[str, Any]] = {}
         self.group_frames: Dict[str, ttk.LabelFrame] = {}
-        self.blinking_animation_job: Optional[str] = None
-        self.ping_animation_job: Optional[str] = None
-        self.animation_job: Optional[str] = None
-        self._is_blinking: bool = False
-        self._is_pinging: bool = False
         
+        # --- Protocol attributes ---
+        # These are initialized by mixins, but declared here to satisfy the protocol.
+        self.ping_animation_job: Optional[str]
+        self.blinking_animation_job: Optional[str]
+        self.animation_job: Optional[str]
+        self._is_blinking: bool
+        self._is_pinging: bool
+
         self._create_widgets()
+        
+        # --- Mixin initializations ---
+        # Explicitly call __init__ for any mixins that require it.
         self._setup_menu(translator)
         self._setup_ui_base()
         
@@ -59,6 +68,9 @@ class AppUI(
         self.root.update_idletasks()
         self.shrink_to_fit()
         self._periodic_network_update()
+
+        if self.on_ui_ready:
+            self.on_ui_ready()
         
     def _create_widgets(self):
         """Create all the widgets for the UI."""
