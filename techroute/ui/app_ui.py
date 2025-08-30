@@ -9,68 +9,52 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Dict, Any, Optional, TYPE_CHECKING, List
 
-from .menu import MenuMixin
-from .dialogs import DialogsMixin
-from .animations import AnimationsMixin
-from .status_view import StatusViewMixin
 from .widgets import NetworkInfoPanel, TargetInputPanel, StatusBar
+from .animator import Animator
+from .dialog_manager import DialogManager
+from .menu_manager import MenuManager
+from .status_view_manager import StatusViewManager
 from .types import AppState, StatusUpdatePayload, NetworkInfoPayload
 from ..events import AppActions, AppStateModel
 from ..network import open_browser_with_error_handling
+from ..localization import LocalizationManager
 
 if TYPE_CHECKING:
     from typing import Callable
     from ..controller import TechRouteController
 
 
-class AppUI(
-    MenuMixin, 
-    DialogsMixin, 
-    AnimationsMixin, 
-    StatusViewMixin
-):
+class AppUI:
     """Manages the user interface of the TechRoute application."""
-    network_info_panel: NetworkInfoPanel
 
-    def __init__(self, root: tk.Tk, actions: AppActions, state: AppStateModel, controller: "TechRouteController", translator: Callable[[str], str], on_ui_ready: Optional[Callable] = None):
+    def __init__(self, root: tk.Tk, actions: AppActions, state: AppStateModel, controller: "TechRouteController", translator: Callable[[str], str], localization_manager: LocalizationManager):
         """Initializes the UI and connects it to the controller."""
-        super().__init__()
         self.root = root
         self.actions = actions
         self.state = state
         self.controller = controller
         self._ = translator
-        self.on_ui_ready = on_ui_ready
+        self.localization_manager = localization_manager
         self._config = {} # Will be populated by controller state later
-        self.status_widgets: Dict[str, Dict[str, Any]] = {}
-        self.group_frames: Dict[str, ttk.LabelFrame] = {}
-        
-        # --- Protocol attributes ---
-        # These are initialized by mixins, but declared here to satisfy the protocol.
-        self.ping_animation_job: Optional[str]
-        self.blinking_animation_job: Optional[str]
-        self.animation_job: Optional[str]
-        self._is_blinking: bool
-        self._is_pinging: bool
 
         self._create_widgets()
-        
-        # --- Mixin initializations ---
-        # Explicitly call __init__ for any mixins that require it.
-        self._setup_menu(translator)
+        self.animator = Animator(self.root, self.status_indicator)
+        self.dialog_manager = DialogManager(self.root, self.controller, self)
+        self.menu_manager = MenuManager(self.root, self.actions, self.dialog_manager, self._)
+        self.status_view_manager = StatusViewManager(self.root, self.status_frame, self.actions, self.dialog_manager, self, self._)
+
+        self.menu_manager.setup()
         self._setup_ui_base()
         
         self._setup_ui_controller_dependent()
 
         self.actions.register_network_info_callback(self.on_network_info_update)
 
-        self.setup_status_display([])
+        self.status_view_manager.setup_status_display([])
         self.root.update_idletasks()
         self.shrink_to_fit()
         self._periodic_network_update()
 
-        if self.on_ui_ready:
-            self.on_ui_ready()
         
     def _create_widgets(self):
         """Create all the widgets for the UI."""
@@ -119,26 +103,23 @@ class AppUI(
         if new_state == AppState.IDLE:
             self.start_stop_button.config(text=self._("Start Pinging"))
             self.update_status_bar(self._("Pinging stopped."))
-            self.reset_status_indicator()
-            self.setup_status_display(self.actions.get_all_targets_with_status())
+            self.animator.reset_status_indicator()
+            self.status_view_manager.setup_status_display(self.actions.get_all_targets_with_status())
         elif new_state == AppState.CHECKING:
             self.start_stop_button.config(text=self._("Stop Pinging"))
             self.update_status_bar(self._("Checking targets..."))
-            self.start_blinking_animation()
+            self.animator.start_blinking_animation()
         elif new_state == AppState.PINGING:
             self.start_stop_button.config(text=self._("Stop Pinging"))
             self.update_status_bar(self._("Pinging targets..."))
-            self.run_ping_animation(self.actions.get_polling_rate_ms())
+            self.animator.run_ping_animation(self.actions.get_polling_rate_ms())
         elif new_state == AppState.STOPPING:
             self.update_status_bar(self._("Stopping..."))
 
     def on_status_update(self, updates: List[StatusUpdatePayload]):
         """Handles status updates from the controller for multiple targets."""
         for target_info in updates:
-            if target_info['original_string'] in self.status_widgets:
-                self.update_target_row(target_info)
-            else:
-                self.add_target_row(target_info)
+            self.status_view_manager.update_target_row(target_info)
         
         if any(s.get('web_port_open') for s in self.actions.get_all_targets_with_status()):
             self.launch_all_button.config(state=tk.NORMAL)
@@ -147,11 +128,11 @@ class AppUI(
 
     def on_initial_statuses_loaded(self, statuses: List[Dict[str, Any]]):
         """Receives the initial list of targets to display."""
-        self.setup_status_display(statuses)
+        self.status_view_manager.setup_status_display(statuses)
 
     def on_bulk_status_update(self, statuses: List[Dict[str, Any]]):
         """Handles a bulk update of all statuses, typically after a check."""
-        self.setup_status_display(statuses)
+        self.status_view_manager.setup_status_display(statuses)
         if any(s.get('web_port_open') for s in statuses):
             self.launch_all_button.config(state=tk.NORMAL)
         else:
@@ -194,10 +175,10 @@ class AppUI(
         if self.actions.get_state() != AppState.IDLE:
             self.stop_ping_process()
             
-        self.setup_status_display([])
+        self.status_view_manager.setup_status_display([])
         self.launch_all_button.config(state=tk.DISABLED)
         self.update_status_bar(self._("Statuses cleared."))
-        self.reset_status_indicator()
+        self.animator.reset_status_indicator()
 
     def launch_single_web_ui(self, original_string: str, port: Optional[int] = None):
         """Launches the web UI for a single, specific target.
@@ -211,7 +192,7 @@ class AppUI(
 
     def launch_all_web_uis(self):
         """Launches web UIs for all targets with open web ports."""
-        if not self._show_unsecure_browser_warning():
+        if not self.dialog_manager.show_unsecure_browser_warning():
             return
         
         urls = self.actions.get_all_web_ui_urls()
@@ -231,6 +212,24 @@ class AppUI(
         return self.actions.get_all_web_ui_urls()
 
     # ------------------- Boilerplate and Helpers -------------------
+
+    def _create_button(self, parent, label, **kwargs):
+        translated_label = self._(label)
+        underline = translated_label.find('&')
+        mnemonic = None
+        if underline != -1:
+            kwargs['text'] = translated_label.replace('&', '', 1)
+            kwargs['underline'] = underline
+            mnemonic = translated_label[underline + 1].lower()
+        else:
+            kwargs['text'] = translated_label
+        
+        button = ttk.Button(parent, **kwargs)
+        return button, mnemonic
+
+    def _bind_mnemonic(self, widget, mnemonic):
+        if mnemonic:
+            self.root.bind(f'<Alt-{mnemonic}>', lambda e, w=widget: w.invoke())
 
     def _setup_ui_base(self):
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
@@ -261,17 +260,20 @@ class AppUI(
         self.polling_rate_entry.pack(side=tk.LEFT, padx=(0, 15))
         self.polling_rate_entry.insert(0, str(self.actions.get_polling_rate_ms()))
         
-        self.ports_button = ttk.Button(left_controls_frame, text=self._("Ports..."), command=self._open_ports_dialog)
+        self.ports_button, ports_mnemonic = self._create_button(left_controls_frame, "&Ports...", command=self.dialog_manager.open_ports_dialog)
         self.ports_button.pack(side=tk.LEFT)
+        self._bind_mnemonic(self.ports_button, ports_mnemonic)
         
-        self.services_button = ttk.Button(left_controls_frame, text=self._("UDP Services..."), command=self._open_udp_services_dialog)
+        self.services_button, services_mnemonic = self._create_button(left_controls_frame, "&UDP Services...", command=self.dialog_manager.open_udp_services_dialog)
         self.services_button.pack(side=tk.LEFT, padx=(8, 0))
+        self._bind_mnemonic(self.services_button, services_mnemonic)
 
         right_controls_frame = ttk.Frame(self.controls_frame)
         right_controls_frame.grid(row=0, column=2, sticky="e")
         
-        self.update_button = ttk.Button(right_controls_frame, text=self._("Update"), command=self._update_ping_process)
+        self.update_button, update_mnemonic = self._create_button(right_controls_frame, "&Update", command=self._update_ping_process)
         self.update_button.pack()
+        self._bind_mnemonic(self.update_button, update_mnemonic)
 
         self.config = self.actions.get_config()
         self.network_info_panel.setup_local_services(self.config)
@@ -331,7 +333,7 @@ class AppUI(
 
     def refresh_ui(self):
         self.network_info_panel.refresh_for_settings_change(self._config)
-        self.refresh_status_rows_for_settings()
+        self.status_view_manager.refresh_status_rows_for_settings()
 
     def _on_canvas_configure(self, event: tk.Event):
         self.status_canvas.itemconfig(self.status_frame_window, width=event.width)
@@ -358,6 +360,21 @@ class AppUI(
             width = int(width * 1.25)
             # height = int(height * 1.15)
         self.root.geometry(f"{width}x{height}")
+
+    def handle_settings_change(self, old_config, new_config):
+        """Handles logic for applying settings changes."""
+        should_retranslate = new_config.get('language') != old_config.get('language')
+        if should_retranslate:
+            self.localization_manager.set_language(new_config.get('language'))
+            self.retranslate_ui()
+
+    def retranslate_ui(self):
+        """Retranslates the entire UI."""
+        _ = self.localization_manager.translator
+        self.root.title(_("TechRoute - Machine Service Checker"))
+        # self.ui.retranslate_ui(_) 
+        if self.actions:
+            self.actions.update_config(self.actions.get_config())
 
     @property
     def main_app(self) -> AppUI:

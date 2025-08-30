@@ -1,26 +1,21 @@
 """
 UI animations for the TechRoute status indicator.
-
-Provides a mixin with small, self-contained animation methods.
 """
 from __future__ import annotations
 import tkinter as tk
-from typing import TYPE_CHECKING
+from tkinter import ttk
 
-if TYPE_CHECKING:
-    from .protocols import AppUIProtocol
+class Animator:
+    """Manages animations for the status indicator widget."""
 
-
-class AnimationsMixin:
-    """Animation helpers for the AppUI status indicator."""
-
-    def __init__(self: 'AppUIProtocol', *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, root: tk.Tk, status_indicator: ttk.Label):
+        self.root = root
+        self.status_indicator = status_indicator
         self.animation_job = None
         self._is_blinking = False
         self._is_pinging = False
 
-    def start_blinking_animation(self: 'AppUIProtocol'):
+    def start_blinking_animation(self):
         """Starts a blinking animation with question marks."""
         if self._is_blinking:
             return
@@ -28,7 +23,7 @@ class AnimationsMixin:
         self._is_blinking = True
         self._blink()
 
-    def _blink(self: 'AppUIProtocol'):
+    def _blink(self):
         """Helper function for the blinking animation."""
         if not self._is_blinking:
             return
@@ -41,7 +36,7 @@ class AnimationsMixin:
             self.animation_job = None
             self._is_blinking = False
 
-    def stop_animation(self: 'AppUIProtocol'):
+    def stop_animation(self):
         """Stops any running animation."""
         if self.animation_job:
             self.root.after_cancel(self.animation_job)
@@ -54,7 +49,7 @@ class AnimationsMixin:
         except tk.TclError:
             pass
 
-    def reset_status_indicator(self: 'AppUIProtocol'):
+    def reset_status_indicator(self):
         """Resets the status indicator to its initial state."""
         self.stop_animation()
         try:
@@ -62,7 +57,7 @@ class AnimationsMixin:
         except tk.TclError:
             pass
 
-    def run_ping_animation(self: 'AppUIProtocol', duration_ms: int):
+    def run_ping_animation(self, duration_ms: int):
         """Starts a continuous ping animation loop scaled by the polling rate."""
         if self._is_pinging:
             return
@@ -71,7 +66,7 @@ class AnimationsMixin:
         self._is_pinging = True
         self._ping_loop(duration_ms)
 
-    def _ping_loop(self: 'AppUIProtocol', duration_ms: int):
+    def _ping_loop(self, duration_ms: int):
         """The core loop for the ping animation."""
         if not self._is_pinging:
             self.reset_status_indicator()

@@ -39,15 +39,27 @@ class LocalizationManager:
                 languages=[lang_code]
             )
             lang_gettext.install()
-            return lang_gettext.gettext
+            return self.create_mnemonic_translator(lang_gettext.gettext)
         except FileNotFoundError:
             # Fallback to a null translator
-            return gettext.gettext
+            return self.create_mnemonic_translator(gettext.gettext)
 
     def set_language(self, language_code: Optional[str]):
         """Sets the language and updates the translator."""
         self.language_code = language_code
         self.translator = self._get_translator()
+
+    @staticmethod
+    def create_mnemonic_translator(translator: Callable[[str], str]) -> Callable[[str], str]:
+        """
+        Creates a wrapper around a translator that handles '&' mnemonics.
+        The original string with '&' is translated, and then the '&' is removed
+        from the final string returned to the UI widget.
+        """
+        def mnemonic_translator(s: str) -> str:
+            translated = translator(s)
+            return translated
+        return mnemonic_translator
 
 def get_translator(language_code: Optional[str] = None) -> Callable[[str], str]:
     """Initializes and returns a translator function."""

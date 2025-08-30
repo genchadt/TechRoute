@@ -1,5 +1,5 @@
 """
-Dialogs for the TechRoute UI.
+Dialog manager for the TechRoute UI.
 """
 from __future__ import annotations
 import os
@@ -9,27 +9,18 @@ from tkinter import ttk, messagebox
 from typing import TYPE_CHECKING, Callable, Dict
 
 from .. import configuration
-from .protocols import AppUIProtocol
 
 if TYPE_CHECKING:
     from ..controller import TechRouteController
-    from ..app import MainApp
+    from .app_ui import AppUI
 
-class DialogsMixin:
-    """Mixin for handling UI dialogs."""
-    # This is a mixin for AppUI, so self *is* the UI.
-    # The `ui` attribute was incorrect.
-    root: tk.Tk
-    controller: "TechRouteController"
+class DialogManager:
+    """Handles the creation and management of UI dialogs."""
 
-    def refresh_ui(self) -> None:
-        """
-        This method is expected to be implemented by the class using this mixin.
-        It should handle refreshing the UI after settings changes.
-        """
-        raise NotImplementedError(
-            "Classes using DialogsMixin must implement the refresh_ui method."
-        )
+    def __init__(self, root: tk.Tk, controller: "TechRouteController", ui: "AppUI"):
+        self.root = root
+        self.controller = controller
+        self.ui = ui
 
     def _set_dialog_icon(self, dialog: tk.Toplevel):
         """Sets the icon for a dialog window."""
@@ -47,7 +38,17 @@ class DialogsMixin:
         except (tk.TclError, FileNotFoundError):
             pass
 
-    def _show_unsecure_browser_warning(self) -> bool:
+    def show_about_dialog(self):
+        """Shows the About dialog."""
+        messagebox.showinfo(
+            "About TechRoute",
+            "TechRoute - Machine Service Checker\n\n"
+            "Version: 1.0.0\n"
+            "A simple tool to check machine statuses and services.",
+            parent=self.root
+        )
+
+    def show_unsecure_browser_warning(self) -> bool:
         """
         Shows a warning about opening an unsecure browser instance.
         Returns True if the user proceeds, False otherwise.
@@ -61,7 +62,6 @@ class DialogsMixin:
             "or handling sensitive data.\n\n"
             "Do you want to continue?"
         )
-        # Use the warning icon to make the dialog more pressing on all platforms.
         return messagebox.askokcancel(title, message, parent=self.root, icon='warning')
 
     def _center_dialog(self, dialog: tk.Toplevel, width: int, height: int):
@@ -80,7 +80,7 @@ class DialogsMixin:
         dialog.geometry(f"{width}x{height}+{x}+{y}")
         dialog.deiconify()
 
-    def _open_ports_dialog(self):
+    def open_ports_dialog(self):
         """Opens a dialog to edit the default ports."""
         dialog = tk.Toplevel(self.root)
         self._set_dialog_icon(dialog)
@@ -171,8 +171,8 @@ class DialogsMixin:
 
         self.root.wait_window(dialog)
 
-    def _open_settings_dialog(self, on_save: Callable[[Dict, Dict], None]):
-        """Opens the Settings dialog (form only)."""
+    def open_settings_dialog(self, on_save: Callable[[Dict, Dict], None]):
+        """Opens the Settings dialog."""
         dialog = tk.Toplevel(self.root)
         self._set_dialog_icon(dialog)
         dialog.title("Settings")
@@ -235,7 +235,7 @@ class DialogsMixin:
                 on_save(old_config, new_config)
 
             if not language_changed:
-                self.refresh_ui()
+                self.ui.refresh_ui()
             
             dialog.destroy()
 
@@ -245,8 +245,8 @@ class DialogsMixin:
         content.columnconfigure(1, weight=1)
         self.root.wait_window(dialog)
 
-    def _open_udp_services_dialog(self):
-        """Opens a dialog to select UDP services to check (future feature)."""
+    def open_udp_services_dialog(self):
+        """Opens a dialog to select UDP services to check."""
         import webbrowser
         dialog = tk.Toplevel(self.root)
         self._set_dialog_icon(dialog)

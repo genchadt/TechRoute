@@ -40,3 +40,5 @@ class AppActions:
         self.extract_host: Callable[[str], str] = lambda s: s
         self.get_service_checkers: Callable[[], List[Any]] = lambda: []
         self.register_network_info_callback: Callable[[Callable[[Dict[str, Any]], None]], None] = lambda cb: None
+        self.clear_statuses: Callable[[], None] = lambda: None
+        self.open_github: Callable[[], None] = lambda: None

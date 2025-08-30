@@ -4,60 +4,52 @@ Status list creation and updates for TechRoute UI.
 from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, messagebox
-from typing import Dict, Any, List, TYPE_CHECKING, Callable, Optional
+from typing import Dict, Any, List, TYPE_CHECKING, Callable
 
 from .widgets.utils import create_indicator_button
-from .styling import TCP_OPEN_COLOR, TCP_CLOSED_COLOR, UDP_OPEN_COLOR, UDP_CLOSED_COLOR, DEFAULT_INDICATOR_COLOR
+from .styling import TCP_OPEN_COLOR, TCP_CLOSED_COLOR, UDP_OPEN_COLOR, UDP_CLOSED_COLOR
 
 if TYPE_CHECKING:
-    from .protocols import AppUIProtocol
+    from .app_ui import AppUI
+    from .dialog_manager import DialogManager
+    from ..events import AppActions
 
+class StatusViewManager:
+    """Manages the status view widgets."""
 
-class StatusViewMixin:
-    def __init__(self: 'AppUIProtocol', *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, root: tk.Tk, status_frame: ttk.Frame, actions: AppActions, dialog_manager: DialogManager, ui: AppUI, translator: Callable[[str], str]):
+        self.root = root
+        self.status_frame = status_frame
+        self.actions = actions
+        self.dialog_manager = dialog_manager
+        self.ui = ui
+        self._ = translator
         self.status_widgets: Dict[str, Dict[str, Any]] = {}
         self.group_frames: Dict[str, ttk.LabelFrame] = {}
-        self._: Callable[[str], str] = lambda s: s
 
-    def update_status_bar(self: 'AppUIProtocol', message: str):
-        self.status_bar_label.config(text=message)
-
-    def setup_status_display(self: 'AppUIProtocol', targets: List[Dict[str, Any]]):
-        """
-        Creates or updates status widgets for each target, grouped by status.
-        """
-        # Clear existing widgets
+    def setup_status_display(self, targets: List[Dict[str, Any]]):
+        """Creates or updates status widgets for each target."""
         for widget in self.status_frame.winfo_children():
             widget.destroy()
         self.status_widgets.clear()
         self.group_frames.clear()
 
         if not targets:
-            # Display a placeholder if there are no targets
             placeholder_frame = ttk.Frame(self.status_frame, height=60)
             placeholder_frame.pack(pady=10, padx=10, fill=tk.X, expand=True)
             placeholder_label = ttk.Label(placeholder_frame, text=self._("Waiting for targets..."), foreground="gray")
             placeholder_label.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
             return
 
-        # Create UI elements for each target directly in the main status frame
         for target_info in targets:
             self.add_target_row(target_info)
 
-    # --------------------------- Settings Refresh ---------------------------
-    def refresh_status_rows_for_settings(self: 'AppUIProtocol'):
-        """Update existing rows after settings (readability/language) changed.
-
-        Avoids discarding current status by re-deriving label/port texts.
-        """
+    def refresh_status_rows_for_settings(self):
+        """Update existing rows after settings changed."""
         readability = self.actions.get_config().get('tcp_port_readability', 'Numbers')
         service_map = self.actions.get_config().get('port_service_map', {})
 
         for original_string, widgets in self.status_widgets.items():
-            # Re-translate status text (widgets['status'] stores last raw status string)
-            # We use controller data if available to get up-to-date info.
-            # Acquire latest record from ping manager
             latest = None
             all_targets = self.actions.get_all_targets_with_status()
             for t in all_targets:
@@ -67,15 +59,12 @@ class StatusViewMixin:
             if latest:
                 status = latest.get('status', widgets.get('status', ''))
                 widgets['label'].config(text=f"{self.actions.extract_host(original_string)}: {status}")
-                # Update TCP port buttons readability preserving color/background
                 port_statuses = latest.get('port_statuses') or {}
                 for port, btn in widgets.get('port_widgets', {}).items():
                     display_text = port
                     if readability == 'Simple':
                         display_text = service_map.get(str(port), str(port))
                     btn.config(text=display_text)
-                # UDP services keep their names; nothing to change
-        # Also update placeholder frame (if any) translation
         if not self.status_widgets:
             for child in self.status_frame.winfo_children():
                 if isinstance(child, ttk.Frame):
@@ -86,16 +75,14 @@ class StatusViewMixin:
                             except Exception:
                                 pass
 
-    def add_target_row(self: 'AppUIProtocol', target_info: Dict[str, Any]):
+    def add_target_row(self, target_info: Dict[str, Any]):
         """Creates a single row of widgets for a target."""
         parent = self.status_frame
-
         original_string = target_info['original_string']
         
         row_frame = ttk.Frame(parent)
         row_frame.pack(fill=tk.X, expand=True, pady=2)
 
-        # Ping button (latency/status indicator)
         ping_button = tk.Button(
             row_frame, text="PING", width=5, bg="gray", fg="white",
             disabledforeground="white", relief="raised", borderwidth=1,
@@ -103,15 +90,12 @@ class StatusViewMixin:
         )
         ping_button.pack(side=tk.LEFT, padx=(0, 10))
 
-        # Port/Service indicators frame
         port_frame = ttk.Frame(row_frame)
         port_frame.pack(side=tk.RIGHT, padx=(5, 0))
 
-        # Main label
         label = ttk.Label(row_frame, text=f"{self.actions.extract_host(original_string)}: {self._('Pinging...')}")
         label.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        # Create placeholders for all potential ports
         port_widgets = {}
         udp_widgets = {}
         readability = self.actions.get_config().get('tcp_port_readability', 'Numbers')
@@ -141,31 +125,23 @@ class StatusViewMixin:
                 udp_widgets[checker.name] = udp_btn
 
         self.status_widgets[original_string] = {
-            "row_frame": row_frame,
-            "label": label,
-            "ping_button": ping_button,
-            "port_widgets": port_widgets,
-            "udp_widgets": udp_widgets,
-            "group_frame": parent,
-            "status": self._('Pinging...')
+            "row_frame": row_frame, "label": label, "ping_button": ping_button,
+            "port_widgets": port_widgets, "udp_widgets": udp_widgets,
+            "group_frame": parent, "status": self._('Pinging...')
         }
         
-        # Immediately update the row with the actual initial data
         self.update_target_row(target_info)
 
-    def _on_service_indicator_click(self: 'AppUIProtocol', target: str, port_or_service: str, is_web_port: bool):
+    def _on_service_indicator_click(self, target: str, port_or_service: str, is_web_port: bool):
         """Handles clicks on any service indicator button."""
         if is_web_port:
-            # It's a web port, show warning then potentially launch browser
-            if self._show_unsecure_browser_warning():
+            if self.dialog_manager.show_unsecure_browser_warning():
                 try:
                     port = int(port_or_service)
-                    self.launch_web_ui_for_port(target, port)
+                    self.ui.launch_web_ui_for_port(target, port)
                 except (ValueError, TypeError):
-                    # Should not happen if is_web_port is true
                     pass
         else:
-            # It's some other service, just show an info message
             messagebox.showinfo(
                 "Service Information",
                 f"Service '{port_or_service}' is responsive on {self.actions.extract_host(target)}, "
@@ -173,12 +149,12 @@ class StatusViewMixin:
                 parent=self.root
             )
 
-    def update_target_row(self: 'AppUIProtocol', target_info: Dict[str, Any]):
+    def update_target_row(self, target_info: Dict[str, Any]):
         """Updates a single row of widgets for a target with new data."""
         original_string = target_info['original_string']
         widgets = self.status_widgets.get(original_string)
         if not widgets:
-            return  # Should not happen if rows are created correctly
+            return
 
         status = target_info.get('status', self._('Pinging...'))
         color = target_info.get('color', 'gray')
@@ -187,29 +163,24 @@ class StatusViewMixin:
         port_statuses = target_info.get('port_statuses')
         udp_service_statuses = target_info.get('udp_service_statuses')
 
-        # Update Ping Button
+        ping_button_text = self._("PING")
         if status == self._("Online"):
             ping_button_text = latency_str
         elif status == self._("Offline"):
             ping_button_text = self._("FAIL")
-        else:
-            ping_button_text = self._("PING")
+        
         widgets['ping_button'].config(
             text=ping_button_text, bg=color,
             state=tk.NORMAL if web_port_open else tk.DISABLED,
             cursor="hand2" if web_port_open else ""
         )
         if web_port_open:
-            # Default to port 80 for the main ping button, as it's the most common.
-            # The _on_service_indicator_click will handle the warning.
             widgets['ping_button'].config(
                 command=lambda s=original_string: self._on_service_indicator_click(s, "80", is_web_port=True)
             )
 
-        # Update Main Label
         widgets['label'].config(text=f"{self.actions.extract_host(original_string)}: {status}")
 
-        # Update TCP Port Buttons
         if port_statuses:
             readability = self.actions.get_config().get('tcp_port_readability', 'Numbers')
             service_map = self.actions.get_config().get('port_service_map', {})
@@ -233,7 +204,6 @@ class StatusViewMixin:
                             command=lambda s=original_string, p=port, web=is_web_port: self._on_service_indicator_click(s, p, web)
                         )
 
-        # Update UDP Service Buttons
         if udp_service_statuses:
             for svc_name, svc_status in udp_service_statuses.items():
                 udp_btn = widgets['udp_widgets'].get(svc_name)

@@ -13,6 +13,24 @@ class TargetInputPanel(ttk.Frame):
         super().__init__(parent)
         self._ = translator
 
+        def create_button(parent, label, **kwargs):
+            translated_label = self._(label)
+            underline = translated_label.find('&')
+            mnemonic = None
+            if underline != -1:
+                kwargs['text'] = translated_label.replace('&', '', 1)
+                kwargs['underline'] = underline
+                mnemonic = translated_label[underline + 1].lower()
+            else:
+                kwargs['text'] = translated_label
+            
+            button = ttk.Button(parent, **kwargs)
+            return button, mnemonic
+
+        def bind_mnemonic(widget, mnemonic):
+            if mnemonic:
+                self.winfo_toplevel().bind(f'<Alt-{mnemonic}>', lambda e, w=widget: w.invoke())
+
         self.input_frame = ttk.LabelFrame(self, text=self._("Target Browser: Unknown"), padding="10")
         self.input_frame.pack(fill=tk.X, expand=True)
 
@@ -33,35 +51,39 @@ class TargetInputPanel(ttk.Frame):
 
         left_quick_frame = ttk.Frame(quick_row)
         left_quick_frame.pack(side=tk.LEFT)
-        self.add_localhost_button = ttk.Button(left_quick_frame, text=self._("Add localhost"), underline=0)
+        self.add_localhost_button, localhost_mnemonic = create_button(left_quick_frame, "Add l&ocalhost")
         self.add_localhost_button.pack(side=tk.LEFT)
-        self.add_gateway_button = ttk.Button(left_quick_frame, text=self._("Add Gateway"), underline=4)
+        bind_mnemonic(self.add_localhost_button, localhost_mnemonic)
+        self.add_gateway_button, gateway_mnemonic = create_button(left_quick_frame, "Add &Gateway")
         self.add_gateway_button.pack(side=tk.LEFT, padx=(5, 0))
+        bind_mnemonic(self.add_gateway_button, gateway_mnemonic)
 
         spacer = ttk.Frame(quick_row)
         spacer.pack(side=tk.LEFT, expand=True, fill=tk.X)
 
         right_quick_frame = ttk.Frame(quick_row)
         right_quick_frame.pack(side=tk.RIGHT)
-        # underline=6 targets the 'F' in "Clear Field" so the visual mnemonic
-        # matches the keyboard binding <Alt-f> defined in the main UI.
-        self.clear_field_button = ttk.Button(right_quick_frame, text=self._("Clear Field"), underline=6)
+        self.clear_field_button, clear_field_mnemonic = create_button(right_quick_frame, "Clear F&ield")
         self.clear_field_button.pack()
+        bind_mnemonic(self.clear_field_button, clear_field_mnemonic)
 
         button_frame = ttk.Frame(self.input_frame)
         button_frame.pack(pady=10, fill=tk.X)
 
         left_button_group = ttk.Frame(button_frame)
         left_button_group.pack(side=tk.LEFT)
-        self.start_stop_button = ttk.Button(left_button_group, text=self._("Start Pinging"), underline=0)
+        self.start_stop_button, start_stop_mnemonic = create_button(left_button_group, "&Start Pinging")
         self.start_stop_button.pack(side=tk.LEFT)
-        self.launch_all_button = ttk.Button(left_button_group, text=self._("Launch Web UIs"), underline=0, state=tk.DISABLED)
+        bind_mnemonic(self.start_stop_button, start_stop_mnemonic)
+        self.launch_all_button, launch_all_mnemonic = create_button(left_button_group, "&Launch Web UIs", state=tk.DISABLED)
         self.launch_all_button.pack(side=tk.LEFT, padx=(5, 0))
+        bind_mnemonic(self.launch_all_button, launch_all_mnemonic)
 
         right_button_group = ttk.Frame(button_frame)
         right_button_group.pack(side=tk.RIGHT)
-        self.clear_statuses_button = ttk.Button(right_button_group, text=self._("Clear Statuses"), underline=0)
+        self.clear_statuses_button, clear_statuses_mnemonic = create_button(right_button_group, "Cl&ear Statuses")
         self.clear_statuses_button.pack()
+        bind_mnemonic(self.clear_statuses_button, clear_statuses_mnemonic)
 
     def get_text(self) -> str:
         return self.ip_entry.get("1.0", tk.END).strip()

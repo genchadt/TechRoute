@@ -15,7 +15,7 @@ import random
 from typing import Dict, Any, List, Optional, Tuple, Callable
 from dataclasses import dataclass
 
-from ..models import StatusUpdate
+from ..models import PingResult, PortStatus
 from .utils import _cached_resolve_host, check_tcp_port
 
 @dataclass
@@ -105,7 +105,7 @@ def ping_worker(
     translator: Callable[[str], str],
     on_first_check_done: Optional[Callable[[], None]] = None
 ):
-    """Worker thread function to ping an IP, check ports, and queue GUI updates."""
+    """Worker thread function to ping an IP, check ports, and queue results."""
     ip, ports, original_string = target['ip'], target['ports'], target['original_string']
     ping_interval = app_config['ping_interval_seconds']
     port_timeout = app_config['port_check_timeout_seconds']
@@ -114,30 +114,23 @@ def ping_worker(
 
     pinger = ICMPPinger(timeout=1.0)
 
-    def _perform_check() -> StatusUpdate:
-        """Performs all checks (ping, TCP, UDP) and returns a status tuple."""
-        port_statuses: Optional[Dict[str, str]] = None
-        udp_service_statuses: Optional[Dict[str, str]] = None
-        latency_str, web_port_open = "", False
-
+    def _perform_check() -> PingResult:
+        """Performs all checks (ping, TCP, UDP) and returns a PingResult."""
+        port_results: List[PortStatus] = []
+        
         success, latency_ms = pinger.ping(concrete_ip)
-        if success:
-            status, color = translator("Online"), "green"
-            latency_str = f"{latency_ms}ms"
-        else:
-            status, color = translator("Offline"), "red"
-
-        # Always check ports, even if ping fails
+        
+        # TCP port checks
         if ports:
-            port_statuses = {str(port): check_tcp_port(ip, port, port_timeout) for port in ports}
-            if any(port_statuses.get(str(p)) == 'Open' for p in [80, 443, 8080]):
-                web_port_open = True
+            for port in ports:
+                status = check_tcp_port(ip, port, port_timeout)
+                port_results.append(PortStatus(port=port, protocol="TCP", status=status))
 
+        # UDP service checks
         udp_ports_to_check = app_config.get('udp_services_to_check', [])
         if udp_ports_to_check:
             from ..checkers import get_udp_service_registry
             registry = get_udp_service_registry()
-            udp_service_statuses = {}
             for port in udp_ports_to_check:
                 if port not in registry:
                     continue
@@ -145,18 +138,16 @@ def ping_worker(
                 service_name, checker = registry[port]
                 try:
                     res = checker.check(ip, timeout=max(0.5, min(2.0, port_timeout)))
-                    udp_service_statuses[service_name] = "Open" if res and res.available else "Closed"
+                    status = "Open" if res and res.available else "Closed"
                 except Exception:
-                    udp_service_statuses[service_name] = "Closed"
-        
-        return StatusUpdate(
+                    status = "Closed"
+                port_results.append(PortStatus(port=port, protocol="UDP", status=status, service_name=service_name))
+
+        return PingResult(
             original_string=original_string,
-            status=status,
-            color=color,
-            port_statuses=port_statuses,
-            latency_str=latency_str,
-            web_port_open=web_port_open,
-            udp_service_statuses=udp_service_statuses
+            ip=ip,
+            latency_ms=latency_ms if success else None,
+            port_statuses=port_results
         )
 
     # Perform an initial check immediately

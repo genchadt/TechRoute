@@ -7,11 +7,11 @@ then starts the application's main loop.
 import os
 import platform
 import tkinter as tk
+import logging
 from . import configuration
 from .localization import LocalizationManager
 from .controller import TechRouteController
 from .ui.app_ui import AppUI
-from .ui.types import ControllerCallbacks
 from .events import AppActions, AppStateModel
 
 try:
@@ -26,41 +26,34 @@ class MainApp:
         """Initializes the application components."""
         self.root = root
         
-        self.localization_manager = LocalizationManager(
+        localization_manager = LocalizationManager(
             configuration.load_or_create_config().get('language')
         )
-        _ = self.localization_manager.translator
+        _ = localization_manager.translator
         self.root.title(_("TechRoute - Machine Service Checker"))
 
         # 1. Create the state, actions, and controller.
         self.state = AppStateModel()
         self.actions = AppActions()
         self.controller = TechRouteController(
-            main_app=self,
             state=self.state,
             actions=self.actions,
             translator=_
         )
 
-        # 2. Create the UI, providing it with actions and the initial state.
+        # 2. Create the UI, providing it with actions, state, and the controller.
         self.ui = AppUI(
             root,
             self.actions,
             self.state,
             self.controller,
             _,
-            on_ui_ready=self._initial_ui_load
+            localization_manager
         )
 
-        # 3. Set up callbacks for the controller to update the UI.
-        callbacks = ControllerCallbacks(
-            on_state_change=self.ui.on_state_change,
-            on_status_update=self.ui.on_status_update,
-            on_initial_statuses_loaded=self.ui.on_initial_statuses_loaded,
-            on_network_info_update=self.ui.on_network_info_update,
-        )
-        self.controller.register_callbacks(callbacks)
-        
+        # 3. Set the UI reference in the controller to complete the loop.
+        self.controller.set_ui(self.ui)
+
         self._set_icon()
 
         if platform.system() == "Windows":
@@ -70,26 +63,7 @@ class MainApp:
         # Start the periodic queue processing
         self._process_controller_queue()
 
-    def _initial_ui_load(self):
-        """Performs the initial loading of data into the UI."""
-        # This is where you can now safely interact with both the controller
-        # and the UI, knowing they are both fully initialized.
-        pass
 
-    def handle_settings_change(self, old_config, new_config):
-        """Handles logic for applying settings changes."""
-        should_retranslate = new_config.get('language') != old_config.get('language')
-        if should_retranslate:
-            self.localization_manager.set_language(new_config.get('language'))
-            self.retranslate_ui()
-
-    def retranslate_ui(self):
-        """Retranslates the entire UI."""
-        _ = self.localization_manager.translator
-        self.root.title(_("TechRoute - Machine Service Checker"))
-        # self.ui.retranslate_ui(_) 
-        if self.actions:
-            self.actions.update_config(self.actions.get_config())
 
     def _set_icon(self):
         """Sets the application icon based on the OS."""
@@ -115,6 +89,8 @@ class MainApp:
 
 def main():
     """The main entry point for the application."""
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.info("Application starting up.")
     if platform.system() == "Windows":
         if ctypes:
             try:
@@ -125,5 +101,7 @@ def main():
                 print("Warning: Could not set AppUserModelID. Taskbar icon may not appear correctly.")
 
     root = tk.Tk()
+    logging.info("Tk root created.")
     app = MainApp(root)
+    logging.info("MainApp initialized.")
     root.mainloop()

@@ -21,7 +21,7 @@ from .checkers.snmp_checker import SNMPChecker
 from .ui.types import AppState, ControllerCallbacks
 from .events import AppActions, AppStateModel
 from dataclasses import asdict
-from .models import StatusUpdate
+from .models import PingResult, TargetStatus, PortStatus
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -34,7 +34,6 @@ class TechRouteController:
 
     def __init__(
         self,
-        main_app: Any,
         state: AppStateModel,
         actions: AppActions,
         translator: Callable[[str], str],
@@ -42,10 +41,9 @@ class TechRouteController:
         """
         Initializes the controller.
         """
-        self.main_app = main_app
+        self.ui = None  # Will be set by set_ui()
         self.state_model = state
         self.actions = actions
-        self.callbacks: Optional[ControllerCallbacks] = None
         self.config = configuration.load_or_create_config()
         self._ = translator
         self.state = AppState.IDLE
@@ -67,7 +65,6 @@ class TechRouteController:
         # Connect controller methods to the actions object
         self.actions.toggle_ping_process = self.toggle_ping_process
         self.actions.stop_ping_process = self.stop_ping_process
-        self.actions.get_all_targets_with_status = self.get_all_targets_with_status
         self.actions.get_state = self.get_state
         self.actions.get_polling_rate_ms = self.get_polling_rate_ms
         self.actions.get_gateway_ip = self.get_gateway_ip
@@ -78,13 +75,13 @@ class TechRouteController:
         self.actions.update_config = self.update_config
         self.actions.get_browser_command = lambda: self.browser_command or {}
         self.actions.get_browser_name = self.get_browser_name
-        self.actions.settings_changed = self.main_app.handle_settings_change
         self.actions.get_config = lambda: self.config
         self.actions.extract_host = self.parser.extract_host
         self.actions.get_service_checkers = lambda: self.service_checker.checkers
         self.actions.register_network_info_callback = self.register_network_info_callback
 
         self.web_ui_targets = {}
+        self.targets: Dict[str, TargetStatus] = {}
         self.network_info = {}
         self._network_info_callback: Optional[Callable[[Dict[str, Any]], None]] = None
         self.browser_command = find_browser_command(self.config.get('browser_preferences', []))
@@ -93,26 +90,22 @@ class TechRouteController:
         self._network_thread_stop_event = threading.Event()
         threading.Thread(target=self._background_network_monitor, daemon=True).start()
 
-    def register_callbacks(self, callbacks: ControllerCallbacks):
-        """Registers UI callbacks and initializes components that need them."""
-        self.callbacks = callbacks
+    def set_ui(self, ui):
+        """Sets the UI instance for the controller."""
+        self.ui = ui
+        self.actions.settings_changed = self.ui.handle_settings_change
         self._initialize_ping_manager()
-
-    def register_ui_ready_callback(self, callback: Callable[[], None]):
-        """Registers a callback to be invoked when the UI is fully initialized."""
-        callback()
 
     def register_network_info_callback(self, callback: Callable[[Dict[str, Any]], None]):
         """Registers a callback for network information updates."""
         self._network_info_callback = callback
 
     def _initialize_ping_manager(self):
-        """Creates the PingManager instance once callbacks are available."""
-        if not self.callbacks:
+        """Creates the PingManager instance once the UI is available."""
+        if not self.ui:
             return
         self.ping_manager = PingManager(
             app_config=self.config,
-            on_status_update=self.callbacks.on_status_update,
             on_checking_start=lambda: self._set_state(AppState.CHECKING),
             on_ping_stop=lambda: self._set_state(AppState.IDLE),
             on_initial_check_complete=lambda: self._set_state(AppState.PINGING)
@@ -121,8 +114,8 @@ class TechRouteController:
     def _set_state(self, new_state: AppState):
         """Sets the application state and notifies the UI."""
         self.state = new_state
-        if self.callbacks:
-            self.callbacks.on_state_change(new_state)
+        if self.ui:
+            self.ui.on_state_change(new_state)
 
     def _load_port_service_mappings(self):
         """Loads port service mappings from the JSON file."""
@@ -174,10 +167,6 @@ class TechRouteController:
         """Returns the gateway IP address if available."""
         return self.network_info.get('gateway')
 
-    def get_all_targets_with_status(self) -> List[Dict[str, Any]]:
-        """Returns all current targets with their last known status."""
-        return self.ping_manager.get_all_targets_with_status() if self.ping_manager else []
-
     def process_network_updates(self):
         """Processes network info updates from the queue."""
         try:
@@ -187,10 +176,10 @@ class TechRouteController:
             if self._network_info_callback:
                 logging.info(f"Calling network info callback with: {info}")
                 self._network_info_callback(info)
-            elif self.callbacks:
+            elif self.ui:
                 # Fallback for older connections if any
                 logging.info(f"Calling on_network_info_update with: {info}")
-                self.callbacks.on_network_info_update(info)
+                self.ui.on_network_info_update(info)
             else:
                 logging.warning("No network info callback registered")
         except Empty:
@@ -208,24 +197,64 @@ class TechRouteController:
         configuration.save_config(self.config)
 
     def process_queue(self):
-        """Processes messages from the ping manager's queue and updates state."""
-        if not self.ping_manager or not self.callbacks:
-            return
-            
-        messages = self.ping_manager.process_queue()
-        if not messages:
+        """Processes results from the ping manager's queue and updates state."""
+        if not self.ping_manager or not self.ui:
             return
 
-        for message in messages:
-            if message.web_port_open:
-                host = self.parser.extract_host(message.original_string)
-                if message.original_string not in self.web_ui_targets:
-                    protocol = "https" if any(p in [443, 8443] for p in (message.port_statuses or {})) else "http"
-                    self.web_ui_targets[message.original_string] = {'host': host, 'protocol': protocol}
+        results = self.ping_manager.process_queue()
+        if not results:
+            return
+
+        for result in results:
+            if result.original_string not in self.targets:
+                continue
+            
+            target_status = self.targets[result.original_string]
+            target_status.latency_ms = result.latency_ms
+            
+            web_port_was_open = target_status.web_port_open
+            
+            for port_status in result.port_statuses:
+                target_status.port_statuses[port_status.port] = port_status
+                if port_status.port in [80, 443, 8080] and port_status.status == 'Open':
+                    target_status.web_port_open = True
+
+            # Update web UI targets if a web port is newly discovered
+            if target_status.web_port_open and not web_port_was_open:
+                host = self.parser.extract_host(result.original_string)
+                protocol = "https" if any(p.port in [443, 8443] and p.status == 'Open' for p in target_status.port_statuses.values()) else "http"
+                self.web_ui_targets[result.original_string] = {'host': host, 'protocol': protocol}
+
+        # Create UI update payloads from the canonical state
+        update_payloads = []
+        for original_string, target_status in self.targets.items():
+            status_str = self._("Online") if target_status.latency_ms is not None else self._("Offline")
+            color = "green" if target_status.latency_ms is not None else "red"
+            latency_str = f"{target_status.latency_ms}ms" if target_status.latency_ms is not None else ""
+            
+            port_statuses_dict = {
+                str(ps.port): ps.status 
+                for ps in target_status.port_statuses.values() 
+                if ps.protocol == "TCP"
+            }
+            udp_service_statuses_dict = {
+                ps.service_name: ps.status 
+                for ps in target_status.port_statuses.values() 
+                if ps.protocol == "UDP" and ps.service_name
+            }
+
+            update_payloads.append({
+                "original_string": original_string,
+                "status": status_str,
+                "color": color,
+                "latency_str": latency_str,
+                "port_statuses": port_statuses_dict,
+                "web_port_open": target_status.web_port_open,
+                "udp_service_statuses": udp_service_statuses_dict
+            })
         
-        update_payloads = [asdict(message) for message in messages]
         if update_payloads:
-            self.callbacks.on_status_update(update_payloads)
+            self.ui.on_status_update(update_payloads)
             
     def toggle_ping_process(self, ip_string: str, polling_rate_ms: int):
         """Starts or stops the pinging process."""
@@ -236,7 +265,7 @@ class TechRouteController:
 
     def start_ping_process(self, ip_string: str, polling_rate_ms: int):
         """Starts the target validation and pinging process in a background thread."""
-        if not self.ping_manager or not self.callbacks:
+        if not self.ping_manager or not self.ui:
             return
 
         if not ip_string.strip():
@@ -252,25 +281,32 @@ class TechRouteController:
         ).start()
 
     def _validate_and_start_pinging(self, ip_string: str, polling_rate_ms: int):
-        """Parses targets and starts the ping manager."""
-        if not self.ping_manager or not self.callbacks:
+        """Parses targets, initializes state, and starts the ping manager."""
+        if not self.ping_manager or not self.ui:
             return
         try:
-            targets = self.parser.parse_and_validate_targets(ip_string)
-            if not targets:
+            parsed_targets = self.parser.parse_and_validate_targets(ip_string)
+            if not parsed_targets:
                 self._set_state(AppState.IDLE)
                 return
 
             self.web_ui_targets.clear()
-            
-            initial_statuses = [{'original_string': t['original_string']} for t in targets]
-            self.callbacks.on_initial_statuses_loaded(initial_statuses)
+            self.targets.clear()
 
-            self.ping_manager.start(targets, polling_rate_ms, self._)
+            initial_statuses = []
+            for t in parsed_targets:
+                original_string = t['original_string']
+                self.targets[original_string] = TargetStatus(
+                    ip=t['ip'],
+                    original_string=original_string
+                )
+                initial_statuses.append({'original_string': original_string})
+
+            self.ui.on_initial_statuses_loaded(initial_statuses)
+
+            self.ping_manager.start(parsed_targets, polling_rate_ms, self._)
         except (ValueError, AttributeError) as e:
             logging.error(f"Target validation failed: {e}")
-            # In a real app, you'd show this error to the user.
-            # For now, just return to idle.
             self._set_state(AppState.IDLE)
 
     def stop_ping_process(self):
