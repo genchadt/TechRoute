@@ -2,8 +2,8 @@
 Main entry point for the TechRoute application.
 """
 import sys
-from . import privileges
-from .app import main
+from techroute import privileges
+from techroute.app import main
 
 def main_entry():
     """
